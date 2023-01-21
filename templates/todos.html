@@ -56,7 +56,7 @@
 {{template "body" .}}
 {{end}}
 
-{{define "hx-post-new-newtodo"}}
+{{define "hx-post-new"}}
 {{$todo := new .}}
 {{template "todo" $todo}}
 {{template "toggleall" true}}
