@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ template "title" . }}</title>
+  <link rel="stylesheet" href="/static/water.css@2.1.1/out/water.css" />
+  <script src="/static/htmx.org@1.8.4/dist/htmx.js"></script>
+</head>
+
+<body>
+  {{ template "body" . }}
+</body>
+
+</html>
+
+{{define "nav"}}
+<nav hx-target="closest body">
+  <ol>
+    <li><a href="/" hx-get="/?nav" hx-push-url="/">About</a></li>
+    <li><a href="/todos" hx-get="/todos?nav" hx-push-url="/todos">Todos</a></li>
+  </ol>
+</nav>
+{{end}}

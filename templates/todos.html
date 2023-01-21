@@ -1,0 +1,90 @@
+{{define "title"}}Todos{{end}}
+
+{{define "body"}}
+{{template "nav" "todos"}}
+<section class="todos">
+  <header>
+    <h1>Todos</h1>
+    <div id="controls">
+      {{block "toggleall" false}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
+        hx-post="/todos?toggleall" hx-target="this" {{if .}}hx-swap-oob="true" {{end}} />{{end}}
+      {{block "input" false}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus
+        hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" {{if .}}hx-swap-oob="true" {{end}} />{{end}}
+    </div>
+  </header>
+  {{block "list" false}}
+  <ul id="todos-list" {{if .}}hx-swap-oob="true" {{end}}>
+    {{range todos}}
+    {{block "todo" .}}
+    <li hx-target="this" hx-swap="outerHTML">
+      <input type="checkbox" {{if .Done}}checked{{end}} hx-post="/todos?id={{.Id}}&toggle" />
+      <label>{{.Label}}</label>
+      <button class="delete" hx-delete="/todos?id={{.Id}}"></button>
+    </li>
+    {{end}}
+    {{end}}
+  </ul>
+  {{end}}
+  <footer>
+    {{block "count" false}}
+    {{$count := countdone}}
+    <span id="todos-count" {{if .}}hx-swap-oob="true" {{end}}>
+      <strong>{{$count}}</strong> {{if eq $count 1}}item{{else}}items{{end}} left
+    </span>
+    {{end}}
+    {{block "filter" false}}
+    <fieldset class="filter" hx-swap="none">
+      <legend>Filter</legend>
+      {{range filters}}
+      <input type="radio" id="filter-{{.Filter}}" name="filter" value="{{.Filter}}" {{if .Selected}}checked{{end}}
+        hx-post="./todos?filter={{.Filter}}" />
+      <label for="filter-{{.Filter}}">{{.Filter}}</label>
+      {{end}}
+    </fieldset>
+    {{end}}
+  </footer>
+</section>
+<style>
+  .filter label {
+    text-transform: capitalize;
+  }
+</style>
+{{end}}
+
+{{define "hx-get-nav"}}
+<title>{{template "title"}}</title>
+{{template "body" .}}
+{{end}}
+
+{{define "hx-post-new-newtodo"}}
+{{$todo := new .}}
+{{template "todo" $todo}}
+{{template "toggleall" true}}
+{{template "count" true}}
+{{template "input" true}}
+{{end}}
+
+{{define "hx-post-toggleall"}}
+{{$_ := toggleall}}
+{{template "list" true}}
+{{template "toggleall" false}}
+{{template "count" true}}
+{{end}}
+
+{{define "hx-post-id-toggle"}}
+{{$todo := toggle (index .id 0)}}
+{{template "todo" $todo}}
+{{template "toggleall" true}}
+{{template "count" true}}
+{{end}}
+
+{{define "hx-delete-id"}}
+{{$_ := delete (index .id 0)}}
+{{template "toggleall" true}}
+{{template "count" true}}
+{{end}}
+
+{{define "hx-post-filter"}}
+{{$_ := filter (index .filter 0)}}
+{{template "list" true}}
+{{end}}

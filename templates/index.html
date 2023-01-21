@@ -1,0 +1,22 @@
+{{define "title"}}About{{end}}
+
+{{define "body"}}
+{{template "nav" "about"}}
+<h1>HTMX + Go templates</h1>
+<div>
+  <p>This is a simple proof of concept using Go (golang) templates to render plain HTML content in response
+    to HTTP requests made by the browser and the HTMX javascript library, which should make for surprisingly
+    seamless experience.</p>
+  <button hx-post="?clicked" hx-swap="innerHTML" hx-target="#increment-target">Increment Counter</button>
+  <div id="increment-target">{{ block "clicked" counter }}<p>Clicked count: {{ . }}</p>{{end}}</div>
+</div>
+{{end}}
+
+{{define "hx-get-nav"}}
+<title>{{template "title"}}</title>
+{{template "body" .}}
+{{end}}
+
+{{define "hx-post-clicked"}}
+{{ template "clicked" increment }}
+{{end}}
