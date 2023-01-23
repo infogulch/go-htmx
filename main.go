@@ -17,17 +17,6 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-// Ideas:
-// fswatch templates and config for changes and automatically reload the http server in response
-//   https://stackoverflow.com/questions/57601700/how-to-change-the-handler-in-http-handle-after-server-start
-// optimize sqlite pragmas
-//   wal, syncronous=NORMAL, foreign keys, strict, trusted_schema=OFF
-// minify template text on load to reduce bandwidth
-//   https://github.com/tdewolff/minify
-// option to explode embedded FS back onto the file system, option to choose between embedded FS and real FS
-// serve compressed assets
-//   https://dev.to/vearutop/serving-compressed-static-assets-with-http-in-go-1-16-55bb
-
 type TemplateFS interface {
 	fs.ReadDirFS
 }
@@ -239,7 +228,12 @@ func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 
 func RowsScanner[R any](getDest func(*R) []interface{}) func(*sql.Rows, error) ([]R, error) {
 	return func(rows *sql.Rows, _ error) (results []R, err error) {
-		defer rows.Close()
+		defer func() {
+			cerr := rows.Close()
+			if err == nil {
+				err = cerr
+			}
+		}()
 		var result R
 		dest := getDest(&result)
 		for rows.Next() {
