@@ -48,9 +48,9 @@ more HTML, which is injected/replaced on the existing page (with no flashing).
 For a more thorough explanation, check out the [docs introduction, *Htmx in a
 Nutshell*](https://htmx.org/docs/#introduction).
 
-So the implementation of an interactive page tends to be a complete html page
-using some template syntax, plus a bunch of 'partials' extracted from it to
-update parts of it in reaction to certain actions taken by the user.
+The implementation of an interactive htmx page tends to be an html page written
+in some template syntax, plus a bunch of 'partials' extracted from it to update
+parts of it in reaction to certain actions taken by the user.
 
 ## Go templates?
 
@@ -59,7 +59,9 @@ modules are well suited to this task because of the ability to define multiple
 [nested template definitions][nested-template] with the `{{define ...}}`
 (define at the top level) and `{{block ...}}` (define and use inline)
 directives. Combining this with the ability to choose which files to include
-in a template collection and the [`FuncMap`][funcmap]
+in a template collection and [`FuncMap`][funcmap] to provide control over
+behavior directly to the template, this makes a very flexible but still
+type safe environment.
 
 [text-template]: https://pkg.go.dev/text/template#section-documentation
 [html-template]: https://pkg.go.dev/html/template#section-documentation

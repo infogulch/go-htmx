@@ -87,7 +87,7 @@ func setupDB(db *sql.DB) {
 
 func index(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 	const KEY = "index_count"
-	files := []string{"layout.html", "index.html"}
+	files := []string{"layout.gohtml", "index.gohtml"}
 	// db init
 	{
 		_, err := db.Exec("INSERT OR IGNORE INTO kv VALUES (?, 0);", KEY)
@@ -131,7 +131,7 @@ func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 		}
 	}
 
-	files := []string{"layout.html", "todos.html"}
+	files := []string{"layout.gohtml", "todos.gohtml"}
 	return TemplateHandler(fs, files, template.FuncMap{
 		"new": func(data url.Values) (todo Todo, err error) {
 			todo.Label = data.Get("newtodo")
