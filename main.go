@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/exp/maps"
 )
@@ -28,7 +28,7 @@ func main() {
 	static := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", static))
 
-	db, err := sql.Open("sqlite3", "todos.db")
+	db, err := sqlx.Connect("sqlite3", "todos.db")
 	if err != nil {
 		log.Fatal(err)
 	} else {
@@ -51,6 +51,9 @@ CREATE TABLE kv (
 	value ANY NOT NULL
 ) STRICT, WITHOUT ROWID;
 
+INSERT OR IGNORE INTO kv VALUES('index_count', 0);
+INSERT OR IGNORE INTO kv VALUES('todos_filter', 'all')
+
 CREATE TABLE todos (
 	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 	done INTEGER NOT NULL CHECK (done BETWEEN 0 AND 1),
@@ -66,7 +69,7 @@ WHERE done AND f.filter IN ('all','completed')
 OR NOT done AND f.filter IN ('all','active');
 `}
 
-func setupDB(db *sql.DB) {
+func setupDB(db *sqlx.DB) {
 	getSchema := func() (version int) {
 		db.QueryRow("PRAGMA user_version;").Scan(&version)
 		return
@@ -85,29 +88,22 @@ func setupDB(db *sql.DB) {
 	}
 }
 
-func index(db *sql.DB, fs TemplateFS) http.HandlerFunc {
+func index(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
 	const KEY = "index_count"
-	files := []string{"layout.gohtml", "index.gohtml"}
-	// db init
-	{
-		_, err := db.Exec("INSERT OR IGNORE INTO kv VALUES (?, 0);", KEY)
-		if err != nil {
-			log.Printf("failed to initialize kv %s = 0: %v", KEY, err)
-		}
-	}
+	files := []string{"layout.html", "index.html"}
 	return TemplateHandler(fs, files, template.FuncMap{
 		"counter": func() (counter int, err error) {
-			err = db.QueryRow("SELECT value FROM kv WHERE key = ?;", KEY).Scan(&counter)
+			err = db.Get(&counter, "SELECT value FROM kv WHERE key = ?;", KEY)
 			return
 		},
 		"increment": func() (counter int, err error) {
-			err = db.QueryRow("UPDATE kv SET value = value + 1 WHERE key = ? RETURNING value;", KEY).Scan(&counter)
+			err = db.Get(&counter, "UPDATE kv SET value = value + 1 WHERE key = ? RETURNING value;", KEY)
 			return
 		},
 	})
 }
 
-func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
+func todos(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
 	type Todo struct {
 		Id    int64
 		Done  bool
@@ -117,21 +113,8 @@ func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 		Filter   string
 		Selected int
 	}
-	scanTodo := func(todo *Todo) []interface{} {
-		return []interface{}{&todo.Id, &todo.Done, &todo.Label}
-	}
-	scanFilter := func(filter *Filter) []interface{} {
-		return []interface{}{&filter.Filter, &filter.Selected}
-	}
 	const FILTER_KEY = "todos_filter"
-	{
-		_, err := db.Exec("INSERT OR IGNORE INTO kv VALUES (?, 'all')", FILTER_KEY)
-		if err != nil {
-			log.Printf("failed to initialize kv %s = 'all': %v", FILTER_KEY, err)
-		}
-	}
-
-	files := []string{"layout.gohtml", "todos.gohtml"}
+	files := []string{"layout.html", "todos.html"}
 	return TemplateHandler(fs, files, template.FuncMap{
 		"new": func(data url.Values) (todo Todo, err error) {
 			todo.Label = data.Get("newtodo")
@@ -156,12 +139,8 @@ func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 			return
 		},
 		"toggle": func(id string) (todo Todo, err error) {
-			var idn int64
-			idn, err = strconv.ParseInt(id, 10, 64)
-			if err != nil {
-				return
-			}
-			res, err := db.Exec("UPDATE todos SET done = NOT done WHERE id = ?", idn)
+			var res sql.Result
+			res, err = db.Exec("UPDATE todos SET done = NOT done WHERE id = ?", id)
 			if err != nil {
 				return
 			}
@@ -169,17 +148,12 @@ func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 				return Todo{}, fmt.Errorf("invalid todo id")
 			}
 
-			err = db.QueryRow("SELECT id, done, label FROM todos WHERE id = ?", idn).Scan(scanTodo(&todo)...)
+			err = db.Get(&todo, "SELECT id, done, label FROM todos WHERE id = ?", id)
 			return
 		},
 		"delete": func(id string) (_ struct{}, err error) {
-			var idn int64
-			idn, err = strconv.ParseInt(id, 10, 64)
-			if err != nil {
-				return
-			}
 			var res sql.Result
-			res, err = db.Exec("DELETE FROM todos WHERE id = ?", idn)
+			res, err = db.Exec("DELETE FROM todos WHERE id = ?", id)
 			if affected, _ := res.RowsAffected(); affected != 1 {
 				return struct{}{}, fmt.Errorf("invalid todo id")
 			}
@@ -189,11 +163,11 @@ func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 			return
 		},
 		"alldone": func() (done bool, err error) {
-			err = db.QueryRow("SELECT COUNT(1) > 0 AND COUNT(1) = SUM(done) FROM todos").Scan(&done)
+			err = db.Get(&done, "SELECT COUNT(1) > 0 AND COUNT(1) = SUM(done) FROM todos")
 			return
 		},
 		"countdone": func() (count int, err error) {
-			err = db.QueryRow("SELECT COUNT(1) FROM todos WHERE NOT done").Scan(&count)
+			err = db.Get(&count, "SELECT COUNT(1) FROM todos WHERE NOT done")
 			return
 		},
 		"filter": func(filter string) (changed bool, err error) {
@@ -211,40 +185,21 @@ func todos(db *sql.DB, fs TemplateFS) http.HandlerFunc {
 			}
 			return
 		},
-		"todos": func() ([]Todo, error) {
-			return RowsScanner(scanTodo)(db.Query(`SELECT id, done, label FROM todos_filtered`))
-		},
-		"todo": func(id string) (todo Todo, err error) {
-			err = db.QueryRow("SELECT id, done, label FROM todos WHERE id = ?", id).Scan(scanTodo(&todo)...)
+		"todos": func() (todos []Todo, err error) {
+			err = db.Select(&todos, `SELECT id, done, label FROM todos_filtered`)
 			return
 		},
-		"filters": func() ([]Filter, error) {
-			return RowsScanner(scanFilter)(db.Query(
+		"todo": func(id string) (todo Todo, err error) {
+			err = db.Get(&todo, `SELECT id, done, label FROM todos where id = ?`, id)
+			return
+		},
+		"filters": func() (filters []Filter, err error) {
+			err = db.Select(&filters,
 				`WITH f(filter) AS (VALUES ('all'),('active'),('completed'))
-				 SELECT filter, filter == (SELECT value FROM kv WHERE key = ?) FROM f`, FILTER_KEY))
+				 SELECT filter, filter == (SELECT value FROM kv WHERE key = ?) as selected FROM f`, FILTER_KEY)
+			return
 		},
 	})
-}
-
-func RowsScanner[R any](getDest func(*R) []interface{}) func(*sql.Rows, error) ([]R, error) {
-	return func(rows *sql.Rows, _ error) (results []R, err error) {
-		defer func() {
-			cerr := rows.Close()
-			if err == nil {
-				err = cerr
-			}
-		}()
-		var result R
-		dest := getDest(&result)
-		for rows.Next() {
-			err = rows.Scan(dest...)
-			if err != nil {
-				return
-			}
-			results = append(results, result)
-		}
-		return
-	}
 }
 
 // TemplateHandler constructs an html.Template from the provided args
