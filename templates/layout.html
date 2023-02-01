@@ -7,6 +7,20 @@
   <title>{{ template "title" . }}</title>
   <link rel="stylesheet" href="/static/water.css@2.1.1/out/water.css" />
   <script src="/static/htmx.org@1.8.4/dist/htmx.js"></script>
+  <style>
+    nav a {
+      padding: 1em;
+      color: var(--text-bright);
+    }
+
+    nav a:hover {
+      background-color: var(--button-hover) !important;
+    }
+
+    nav a.selected {
+      background-color: var(--button-base);
+    }
+  </style>
 </head>
 
 <body>
@@ -18,9 +32,7 @@
 
 {{define "nav"}}
 <nav hx-target="closest body">
-  <ol>
-    <li><a href="/" hx-get="/?nav" hx-push-url="/">About</a></li>
-    <li><a href="/todos" hx-get="/todos?nav" hx-push-url="/todos">Todos</a></li>
-  </ol>
+  <a href="/" hx-get="/?nav" hx-push-url="/" {{if eq . "about" }}class="selected" {{end}}>About</a>
+  <a href="/todos" hx-get="/todos?nav" hx-push-url="/todos" {{if eq . "todos" }}class="selected" {{end}}>Todos</a>
 </nav>
 {{end}}

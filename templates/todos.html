@@ -32,6 +32,7 @@
       <strong>{{$count}}</strong> {{if eq $count 1}}item{{else}}items{{end}} left
     </span>
     {{end}}
+    <br />
     {{block "filter" false}}
     <fieldset class="filter" hx-swap="none">
       <legend>Filter</legend>
@@ -45,6 +46,53 @@
   </footer>
 </section>
 <style>
+  .todos {
+    font-size: 1.5em;
+  }
+
+  .todos input {
+    vertical-align: middle;
+    display: inline-block;
+  }
+
+  .todos header input[type=checkbox] {
+    font-size: 1.5em;
+  }
+
+  .todos ul {
+    list-style-type: none;
+    padding-left: 0;
+  }
+
+  .todos li {
+    position: relative;
+  }
+
+  .todos li>input[type=checkbox]:checked+label {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+
+  .todos button.delete {
+    position: absolute;
+    right: 0;
+    padding: 0;
+    background-color: var(--background-body);
+    color: #af5b5e;
+    overflow: hidden;
+  }
+
+  .todos button.delete:after {
+    position: relative;
+    top: -.2em;
+    content: '×';
+    font-size: 1.5em;
+  }
+
+  .filter {
+    max-width: fit-content;
+  }
+
   .filter label {
     text-transform: capitalize;
   }
