@@ -5,12 +5,10 @@
 <section class="todos">
   <header>
     <h1>Todos</h1>
-    <div id="controls">
-      {{block "toggleall" false}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
-        hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
-      {{block "input" false}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus
-        hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
-    </div>
+    {{block "toggleall" false}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
+      hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
+    {{block "input" false}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus
+      hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
   </header>
   {{block "list" false}}
   <ul id="todos-list" hx-swap-oob="true">
