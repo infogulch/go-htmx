@@ -186,7 +186,7 @@ func todos(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
 			return
 		},
 		"todos": func() (todos []Todo, err error) {
-			err = db.Select(&todos, `SELECT id, done, label FROM todos_filtered`)
+			err = db.Select(&todos, `SELECT id, done, label FROM todos_filtered ORDER BY id DESC`)
 			return
 		},
 		"todo": func(id string) (todo Todo, err error) {
