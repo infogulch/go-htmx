@@ -7,13 +7,13 @@
     <h1>Todos</h1>
     <div id="controls">
       {{block "toggleall" false}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
-        hx-post="/todos?toggleall" hx-target="this" {{if .}}hx-swap-oob="true" {{end}} />{{end}}
+        hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
       {{block "input" false}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus
-        hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" {{if .}}hx-swap-oob="true" {{end}} />{{end}}
+        hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
     </div>
   </header>
   {{block "list" false}}
-  <ul id="todos-list" {{if .}}hx-swap-oob="true" {{end}}>
+  <ul id="todos-list" hx-swap-oob="true">
     {{range todos}}
     {{block "todo" .}}
     <li hx-target="this" hx-swap="outerHTML">
@@ -28,7 +28,7 @@
   <footer>
     {{block "count" false}}
     {{$count := countdone}}
-    <span id="todos-count" {{if .}}hx-swap-oob="true" {{end}}>
+    <span id="todos-count" hx-swap-oob="true">
       <strong>{{$count}}</strong> {{if eq $count 1}}item{{else}}items{{end}} left
     </span>
     {{end}}
@@ -107,32 +107,32 @@
 {{define "hx-post-new"}}
 {{$todo := new .}}
 {{template "todo" $todo}}
-{{template "toggleall" true}}
-{{template "count" true}}
-{{template "input" true}}
+{{template "toggleall"}}
+{{template "count"}}
+{{template "input"}}
 {{end}}
 
 {{define "hx-post-toggleall"}}
 {{$_ := toggleall}}
-{{template "list" true}}
-{{template "toggleall" false}}
-{{template "count" true}}
+{{template "list"}}
+{{template "toggleall"}}
+{{template "count"}}
 {{end}}
 
 {{define "hx-post-id-toggle"}}
 {{$todo := toggle (index .id 0)}}
 {{template "todo" $todo}}
-{{template "toggleall" true}}
-{{template "count" true}}
+{{template "toggleall"}}
+{{template "count"}}
 {{end}}
 
 {{define "hx-delete-id"}}
 {{$_ := delete (index .id 0)}}
-{{template "toggleall" true}}
-{{template "count" true}}
+{{template "toggleall"}}
+{{template "count"}}
 {{end}}
 
 {{define "hx-post-filter"}}
 {{$_ := filter (index .filter 0)}}
-{{template "list" true}}
+{{template "list"}}
 {{end}}
