@@ -116,6 +116,7 @@ out of the template collection to render in response.
 		- Web server (probably Caddy)
 		- Periodic cleanup to prevent abuse
 	- [x] Clean up CSS
+	- [ ] Placeholder for empty list https://blog.mathieu-leplatre.info/placeholder-for-empty-lists-in-css.html
 	- [ ] Use CSS transitions when making htmx changes to the DOM
 	- [ ] Websocket to update other tabs when changes are made
 - Framework Features
