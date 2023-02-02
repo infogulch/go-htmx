@@ -1,14 +1,12 @@
 package main
 
 import (
-	"database/sql"
 	"embed"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 
@@ -116,58 +114,33 @@ func todos(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
 	const FILTER_KEY = "todos_filter"
 	files := []string{"layout.html", "todos.html"}
 	return TemplateHandler(fs, files, template.FuncMap{
-		"new": func(data url.Values) (todo Todo, err error) {
-			todo.Label = data.Get("newtodo")
-			if todo.Label == "" {
+		"new": func(label string) (todo Todo, err error) {
+			if label == "" {
 				err = fmt.Errorf("empty todo")
 				return
 			}
-			var res sql.Result
-			res, err = db.Exec("INSERT INTO todos(done, label) VALUES (false, ?);", &todo.Label)
-			if err != nil {
-				return
-			}
-			todo.Id, err = res.LastInsertId()
+			todo.Label = label
+			err = db.Get(&todo.Id, "INSERT INTO todos(done, label) VALUES (false, ?) RETURNING id;", label)
 			return
 		},
 		"toggleall": func() (changed bool, err error) {
-			var res sql.Result
-			res, err = db.Exec("UPDATE todos SET done = NOT (SELECT COALESCE(MIN(done),0) from todos)")
-			if affected, _ := res.RowsAffected(); affected > 0 {
-				changed = true
-			}
+			err = db.Get(&changed, "UPDATE todos SET done = NOT (SELECT COALESCE(MIN(done),0) from todos) RETURNING changes() > 0;")
 			return
 		},
 		"toggle": func(id string) (todo Todo, err error) {
-			var res sql.Result
-			res, err = db.Exec("UPDATE todos SET done = NOT done WHERE id = ?", id)
-			if err != nil {
-				return
-			}
-			if affected, _ := res.RowsAffected(); affected != 1 {
-				return Todo{}, fmt.Errorf("invalid todo id")
-			}
-
-			err = db.Get(&todo, "SELECT id, done, label FROM todos WHERE id = ?", id)
+			err = db.Get(&todo, "UPDATE todos SET done = NOT done WHERE id = ? RETURNING id, done, label;", id)
 			return
 		},
-		"delete": func(id string) (_ struct{}, err error) {
-			var res sql.Result
-			res, err = db.Exec("DELETE FROM todos WHERE id = ?", id)
-			if affected, _ := res.RowsAffected(); affected != 1 {
-				return struct{}{}, fmt.Errorf("invalid todo id")
-			}
-			if err != nil {
-				return
-			}
+		"delete": func(id string) (changed bool, err error) {
+			err = db.Get(&changed, "DELETE FROM todos WHERE id = ? RETURNING changes() == 1;", id)
 			return
 		},
 		"alldone": func() (done bool, err error) {
-			err = db.Get(&done, "SELECT COUNT(1) > 0 AND COUNT(1) = SUM(done) FROM todos")
+			err = db.Get(&done, "SELECT COUNT(1) > 0 AND COUNT(1) = SUM(done) FROM todos;")
 			return
 		},
 		"countdone": func() (count int, err error) {
-			err = db.Get(&count, "SELECT COUNT(1) FROM todos WHERE NOT done")
+			err = db.Get(&count, "SELECT COUNT(1) FROM todos WHERE NOT done;")
 			return
 		},
 		"filter": func(filter string) (changed bool, err error) {
@@ -175,18 +148,11 @@ func todos(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
 				err = fmt.Errorf("invalid filter")
 				return
 			}
-			var res sql.Result
-			res, err = db.Exec("UPDATE kv SET value = ? where key = ?", filter, FILTER_KEY)
-			if err != nil {
-				return
-			}
-			if affected, _ := res.RowsAffected(); affected > 0 {
-				changed = true
-			}
+			err = db.Get(&changed, "UPDATE kv SET value = ? WHERE key = ? RETURNING changes() > 0;", filter, FILTER_KEY)
 			return
 		},
 		"todos": func() (todos []Todo, err error) {
-			err = db.Select(&todos, `SELECT id, done, label FROM todos_filtered ORDER BY id DESC`)
+			err = db.Select(&todos, `SELECT id, done, label FROM todos_filtered ORDER BY id DESC;`)
 			return
 		},
 		"todo": func(id string) (todo Todo, err error) {
@@ -196,7 +162,7 @@ func todos(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
 		"filters": func() (filters []Filter, err error) {
 			err = db.Select(&filters,
 				`WITH f(filter) AS (VALUES ('all'),('active'),('completed'))
-				 SELECT filter, filter == (SELECT value FROM kv WHERE key = ?) as selected FROM f`, FILTER_KEY)
+				 SELECT filter, filter == (SELECT value FROM kv WHERE key = ?) as selected FROM f;`, FILTER_KEY)
 			return
 		},
 	})
@@ -238,11 +204,11 @@ func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http
 			routeId = strings.ToLower(strings.Join(routeparts, "-"))
 		}
 
-		log.Printf("Handling route at %s : %s", r.URL.Path, routeId)
+		log.Printf("Handling request %s at %s\n", routeId, r.URL.Path)
 
 		if t := tmpl.Lookup(routeId); t != nil {
 			r.ParseForm()
-			err := t.Execute(w, r.Form)
+			err := t.Execute(w, r)
 			if err != nil {
 				log.Print(err)
 			}

@@ -5,12 +5,12 @@
 <section class="todos">
   <header>
     <h1>Todos</h1>
-    {{block "toggleall" false}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
+    {{block "toggleall" .}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
       hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
-    {{block "input" false}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus
+    {{block "input" .}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus
       hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
   </header>
-  {{block "list" false}}
+  {{block "list" .}}
   <ul id="todos-list" hx-swap-oob="true">
     {{range todos}}
     {{block "todo" .}}
@@ -24,14 +24,14 @@
   </ul>
   {{end}}
   <footer>
-    {{block "count" false}}
+    {{block "count" .}}
     {{$count := countdone}}
     <span id="todos-count" hx-swap-oob="true">
       <strong>{{$count}}</strong> {{if eq $count 1}}item{{else}}items{{end}} left
     </span>
     {{end}}
     <br />
-    {{block "filter" false}}
+    {{block "filter" .}}
     <fieldset class="filter" hx-swap="none">
       <legend>Filter</legend>
       {{range filters}}
@@ -103,7 +103,7 @@
 {{end}}
 
 {{define "hx-post-new"}}
-{{$todo := new .}}
+{{$todo := index .Form.newtodo 0 | new}}
 {{template "todo" $todo}}
 {{template "toggleall"}}
 {{template "count"}}
@@ -118,19 +118,19 @@
 {{end}}
 
 {{define "hx-post-id-toggle"}}
-{{$todo := toggle (index .id 0)}}
+{{$todo := index .Form.id 0 | toggle}}
 {{template "todo" $todo}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
 {{define "hx-delete-id"}}
-{{$_ := delete (index .id 0)}}
+{{$_ := index .Form.id 0 | delete}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
 {{define "hx-post-filter"}}
-{{$_ := filter (index .filter 0)}}
+{{$_ := index .Form.filter 0 | filter}}
 {{template "list"}}
 {{end}}

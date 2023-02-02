@@ -1,7 +1,7 @@
 # About
 
-This repo demonstrates how to build a web app with moderate level interactivity
-with NO (*user-written) javascript, using just these tools:
+This repo demonstrates how to build an interactive web application with NO
+(*user-written) javascript, using just these tools:
 
 - [htmx.org](https://htmx.org) javascript library
 - The `http` and `html/template` modules from Go's standard library
@@ -41,7 +41,7 @@ interactivity by adding annotations to nodes in the DOM. To quote
 > > **"When a user clicks on this button, issue an AJAX request to /clicked,
 > > and replace the entire button with the HTML response"**
 
-... Yes it's that simple. When the browser loads a page it returns regular
+Yes it's that simple. When the browser loads a page it returns regular
 HTML (with `hx-*` attributes and the htmx library in a script reference). The
 user's action triggers an AJAX request, to which the server just responds with
 more HTML, which is injected/replaced on the existing page (with no flashing).
@@ -115,20 +115,18 @@ out of the template collection to render in response.
 		- One list per user, or one global list for everyone?
 		- Web server (probably Caddy)
 		- Periodic cleanup to prevent abuse
-	- [ ] Clean up CSS
+	- [x] Clean up CSS
 	- [ ] Use CSS transitions when making htmx changes to the DOM
 	- [ ] Websocket to update other tabs when changes are made
-- Developer productivity
+- Framework Features
 	- [ ] Embed template and static files into the binary for single file deployments
 		- [ ] Export embedded files to the filesystem
 		- [ ] Override embedded templates with ones on the filesystem
 	- [x] Automatic SQL migrations
-	- [ ] Watch templates dir for changes and automatically reload on change
-	      https://stackoverflow.com/questions/57601700/how-to-change-the-handler-in-http-handle-after-server-start
-	- [ ] Try to integrate a DI from https://github.com/infogulch/inject
+	- [ ] Watch templates dir for changes and automatically reload on change https://stackoverflow.com/questions/57601700/how-to-change-the-handler-in-http-handle-after-server-start
+	- [ ] See if DI is useful; https://github.com/infogulch/inject
 - Performance
-  - [ ] Serve pre-compressed static assets
-	      https://dev.to/vearutop/serving-compressed-static-assets-with-http-in-go-1-16-55bb
-  - [ ] Optimize sqlite pragmas: wal, syncronous=NORMAL, foreign keys, strict, trusted_schema=OFF
-	- [ ] Minify template text on load to reduce bandwidth. https://github.com/tdewolff/minify
+  - [ ] Serve pre-compressed static assets https://dev.to/vearutop/serving-compressed-static-assets-with-http-in-go-1-16-55bb
+  - [ ] Optimize sqlite pragmas: wal, syncronous=NORMAL, foreign keys, strict, trusted_schema=OFF. See: https://pkg.go.dev/github.com/mattn/go-sqlite3?utm_source=godoc#SQLiteDriver.Open
+  - [ ] Minify template text on load to reduce bandwidth. https://github.com/tdewolff/minify
 
