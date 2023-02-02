@@ -7,7 +7,7 @@
     <h1>Todos</h1>
     {{block "toggleall" .}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
       hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
-    {{block "input" .}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus
+    {{block "input" .}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus required
       hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
   </header>
   {{block "list" .}}
