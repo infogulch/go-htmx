@@ -1,46 +1,63 @@
 package main
 
 import (
-	"embed"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/infogulch/inject"
+	"github.com/jmoiron/sqlx"
 	"golang.org/x/exp/maps"
 )
 
 type TemplateFS interface {
-	fs.ReadDirFS
+	fs.FS
 }
 
-//go:embed templates
-var TemplateFiles embed.FS
+type StaticFS interface {
+	fs.FS
+}
 
 func main() {
-	static := http.FileServer(http.Dir("./static"))
-	http.Handle("/static/", http.StripPrefix("/static/", static))
-
-	db, err := sqlx.Connect("sqlite3", "todos.db")
+	injector, err := inject.New(
+		TemplateFS(os.DirFS("./templates")),
+		StaticFS(os.DirFS("./static")),
+		make_db,
+		make_static,
+		make_index,
+		make_todos,
+		make_server,
+	)
 	if err != nil {
 		log.Fatal(err)
-	} else {
-		setupDB(db)
 	}
 
-	templates1, _ := fs.Sub(TemplateFiles, "templates")
-	templates := templates1.(TemplateFS)
-
-	http.HandleFunc("/todos", todos(db, templates))
-	http.HandleFunc("/", index(db, templates))
+	iserver, err := injector.Get((*http.Server)(nil))
+	if err != nil {
+		log.Fatal(err)
+	}
+	server := iserver.(*http.Server)
 
 	log.Print("Starting server...")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
+	log.Fatal(server.ListenAndServe())
+}
+
+func make_server(s StaticHandler, i IndexHandler, t TodosHandler) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/static", s)
+	mux.Handle("/", i)
+	mux.Handle("/todos", t)
+	return &http.Server{
+		Addr:    "0.0.0.0:8080",
+		Handler: mux,
+	}
 }
 
 var SCHEMA_MIGRATIONS = [...]string{`
@@ -67,26 +84,43 @@ WHERE done AND f.filter IN ('all','completed')
 OR NOT done AND f.filter IN ('all','active');
 `}
 
-func setupDB(db *sqlx.DB) {
-	getSchema := func() (version int) {
-		db.QueryRow("PRAGMA user_version;").Scan(&version)
+func make_db() (*sqlx.DB, error) {
+	db, err := sqlx.Connect("sqlite3", "app.db")
+	if err != nil {
+		return nil, err
+	}
+	schemaVersion := func() (version int) {
+		db.Get(&version, "PRAGMA user_version;")
 		return
 	}
-	version := getSchema()
+	version := schemaVersion()
 	log.Printf("Found schema version %d", version)
 	for i, stmt := range SCHEMA_MIGRATIONS[version:] {
-		_, err := db.Exec(stmt)
+		_, err = db.Exec(stmt)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		i += 1
 		// sadly, sqlite doesn't support params in PRAGMA statments
 		db.Exec(fmt.Sprintf("PRAGMA user_version=%d", i))
-		log.Printf("Migrated schema to version %d", getSchema())
+		log.Printf("Migrated schema to version %d", schemaVersion())
 	}
+	return db, nil
 }
 
-func index(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
+type StaticHandler interface {
+	http.Handler
+}
+
+func make_static(fs StaticFS) StaticHandler {
+	return http.StripPrefix("/static/", http.FileServer(http.FS(fs)))
+}
+
+type IndexHandler interface {
+	http.Handler
+}
+
+func make_index(db *sqlx.DB, fs TemplateFS) IndexHandler {
 	const KEY = "index_count"
 	files := []string{"layout.html", "index.html"}
 	return TemplateHandler(fs, files, template.FuncMap{
@@ -101,7 +135,11 @@ func index(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
 	})
 }
 
-func todos(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
+type TodosHandler interface {
+	http.Handler
+}
+
+func make_todos(db *sqlx.DB, fs TemplateFS) TodosHandler {
 	type Todo struct {
 		Id    int64
 		Done  bool
@@ -193,16 +231,7 @@ func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http
 		log.Fatal(err)
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		var routeId string
-		{
-			keys := maps.Keys(r.URL.Query())
-			sort.Strings(keys)
-			routeparts := append([]string{"hx", r.Method}, keys...)
-			if r.Header.Get("HX-Request") != "true" {
-				routeparts = routeparts[1:]
-			}
-			routeId = strings.ToLower(strings.Join(routeparts, "-"))
-		}
+		routeId := GetRouteId(r)
 
 		log.Printf("Handling request %s at %s\n", routeId, r.URL.Path)
 
@@ -216,4 +245,17 @@ func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http
 			http.NotFound(w, r)
 		}
 	}
+}
+
+func GetRouteId(r *http.Request) string {
+	var prefix string
+	if r.Header.Get("HX-Request") == "true" {
+		prefix = "htmx"
+	} else {
+		prefix = "http"
+	}
+	keys := maps.Keys(r.URL.Query())
+	sort.Strings(keys)
+	routeparts := append([]string{prefix, r.Method}, keys...)
+	return strings.ToLower(strings.Join(routeparts, "-"))
 }

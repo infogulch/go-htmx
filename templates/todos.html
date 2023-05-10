@@ -62,6 +62,14 @@
     padding-left: 0;
   }
 
+  .todos ul:empty {
+    content: 'No todos left. Try adding a new one!'
+  }
+
+  .todos ul:empty+footer {
+    display: none;
+  }
+
   .todos li {
     position: relative;
   }
