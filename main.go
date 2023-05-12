@@ -4,14 +4,17 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"reflect"
 	"sort"
 	"strings"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/cozodb/cozo-lib-go"
+	"github.com/stretchr/objx"
 	"golang.org/x/exp/maps"
 )
 
@@ -19,153 +22,101 @@ type TemplateFS interface {
 	fs.ReadDirFS
 }
 
-//go:embed templates
-var TemplateFiles embed.FS
+//go:embed templates static
+var EmbedFiles embed.FS
+
+var Files fs.FS = os.DirFS(".") /* EmbedFiles */
 
 func main() {
-	static := http.FileServer(http.Dir("./static"))
-	http.Handle("/static/", http.StripPrefix("/static/", static))
+	templates := must(fs.Sub(Files, "templates")).(TemplateFS)
+	db := must(cozo.New("mem", "", nil))
 
-	db, err := sqlx.Connect("sqlite3", "todos.db")
-	if err != nil {
-		log.Fatal(err)
-	} else {
-		setupDB(db)
+	funcs := template.FuncMap{
+		"query": func(query string, params any) (cozo.NamedRows, error) {
+			return db.Run(query, makeParams(params))
+		},
+		"queryrows": func(query string, params any) ([]map[string]any, error) {
+			return QueryRows(db, query, makeParams(params))
+		},
+		"queryrow": func(query string, params any) (map[string]any, error) {
+			return QueryRow(db, query, makeParams(params))
+		},
+		"queryval": func(query string, params any) (any, error) {
+			return QueryVal(db, query, makeParams(params))
+		},
+		"idx": func(idx int, arr any) any {
+			return reflect.ValueOf(arr).Index(idx).Interface()
+		},
 	}
 
-	templates1, _ := fs.Sub(TemplateFiles, "templates")
-	templates := templates1.(TemplateFS)
-
-	http.HandleFunc("/todos", todos(db, templates))
-	http.HandleFunc("/", index(db, templates))
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(must(fs.Sub(Files, "static"))))))
+	http.HandleFunc("/", TemplateHandler(templates, []string{"layout.html", "index.html"}, funcs))
+	http.HandleFunc("/todos", TemplateHandler(templates, []string{"layout.html", "todos.html"}, funcs))
 
 	log.Print("Starting server...")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
 }
 
-var SCHEMA_MIGRATIONS = [...]string{`
-CREATE TABLE kv (
-	key TEXT PRIMARY KEY NOT NULL,
-	value ANY NOT NULL
-) STRICT, WITHOUT ROWID;
-
-INSERT OR IGNORE INTO kv VALUES('index_count', 0);
-INSERT OR IGNORE INTO kv VALUES('todos_filter', 'all')
-
-CREATE TABLE todos (
-	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-	done INTEGER NOT NULL CHECK (done BETWEEN 0 AND 1),
-	label TEXT NOT NULL
-) STRICT;
-
-CREATE VIEW todos_filtered AS
-WITH f(filter) AS (SELECT value FROM kv WHERE key = 'todos_filter')
-SELECT id, done, label
-FROM todos
-JOIN f
-WHERE done AND f.filter IN ('all','completed')
-OR NOT done AND f.filter IN ('all','active');
-`}
-
-func setupDB(db *sqlx.DB) {
-	getSchema := func() (version int) {
-		db.QueryRow("PRAGMA user_version;").Scan(&version)
+func QueryRows(db cozo.CozoDB, query string, params objx.Map) (rows []map[string]any, err error) {
+	var result cozo.NamedRows
+	result, err = db.Run(query, params)
+	if err != nil {
 		return
 	}
-	version := getSchema()
-	log.Printf("Found schema version %d", version)
-	for i, stmt := range SCHEMA_MIGRATIONS[version:] {
-		_, err := db.Exec(stmt)
-		if err != nil {
-			log.Fatal(err)
+	for _, row := range result.Rows {
+		rowmap := map[string]any{}
+		for colidx, colname := range result.Headers {
+			rowmap[colname] = row[colidx]
 		}
-		i += 1
-		// sadly, sqlite doesn't support params in PRAGMA statments
-		db.Exec(fmt.Sprintf("PRAGMA user_version=%d", i))
-		log.Printf("Migrated schema to version %d", getSchema())
+		rows = append(rows, rowmap)
 	}
+	return
 }
 
-func index(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
-	const KEY = "index_count"
-	files := []string{"layout.html", "index.html"}
-	return TemplateHandler(fs, files, template.FuncMap{
-		"counter": func() (counter int, err error) {
-			err = db.Get(&counter, "SELECT value FROM kv WHERE key = ?;", KEY)
-			return
-		},
-		"increment": func() (counter int, err error) {
-			err = db.Get(&counter, "UPDATE kv SET value = value + 1 WHERE key = ? RETURNING value;", KEY)
-			return
-		},
-	})
+func QueryRow(db cozo.CozoDB, query string, params objx.Map) (row map[string]any, err error) {
+	var result cozo.NamedRows
+	result, err = db.Run(query, params)
+	if err != nil {
+		return
+	}
+	if len(result.Rows) != 1 {
+		return nil, fmt.Errorf("the query must return a single row, instead it returned %d", len(result.Rows))
+	}
+	row = map[string]any{}
+	for colidx, colname := range result.Headers {
+		row[colname] = result.Rows[0][colidx]
+	}
+	return
 }
 
-func todos(db *sqlx.DB, fs TemplateFS) http.HandlerFunc {
-	type Todo struct {
-		Id    int64
-		Done  bool
-		Label string
+func QueryVal(db cozo.CozoDB, query string, params objx.Map) (val any, err error) {
+	var result cozo.NamedRows
+	result, err = db.Run(query, params)
+	if err != nil {
+		return
 	}
-	type Filter struct {
-		Filter   string
-		Selected int
+	if len(result.Rows) != 1 {
+		return nil, fmt.Errorf("the query must return a single row, instead it returned %d", len(result.Rows))
 	}
-	const FILTER_KEY = "todos_filter"
-	files := []string{"layout.html", "todos.html"}
-	return TemplateHandler(fs, files, template.FuncMap{
-		"new": func(label string) (todo Todo, err error) {
-			if label == "" {
-				err = fmt.Errorf("empty todo")
-				return
-			}
-			todo.Label = label
-			err = db.Get(&todo.Id, "INSERT INTO todos(done, label) VALUES (false, ?) RETURNING id;", label)
-			return
-		},
-		"toggleall": func() (changed bool, err error) {
-			err = db.Get(&changed, "UPDATE todos SET done = NOT (SELECT COALESCE(MIN(done),0) from todos) RETURNING changes() > 0;")
-			return
-		},
-		"toggle": func(id string) (todo Todo, err error) {
-			err = db.Get(&todo, "UPDATE todos SET done = NOT done WHERE id = ? RETURNING id, done, label;", id)
-			return
-		},
-		"delete": func(id string) (changed bool, err error) {
-			err = db.Get(&changed, "DELETE FROM todos WHERE id = ? RETURNING changes() == 1;", id)
-			return
-		},
-		"alldone": func() (done bool, err error) {
-			err = db.Get(&done, "SELECT COUNT(1) > 0 AND COUNT(1) = SUM(done) FROM todos;")
-			return
-		},
-		"countdone": func() (count int, err error) {
-			err = db.Get(&count, "SELECT COUNT(1) FROM todos WHERE NOT done;")
-			return
-		},
-		"filter": func(filter string) (changed bool, err error) {
-			if filter != "all" && filter != "active" && filter != "completed" {
-				err = fmt.Errorf("invalid filter")
-				return
-			}
-			err = db.Get(&changed, "UPDATE kv SET value = ? WHERE key = ? RETURNING changes() > 0;", filter, FILTER_KEY)
-			return
-		},
-		"todos": func() (todos []Todo, err error) {
-			err = db.Select(&todos, `SELECT id, done, label FROM todos_filtered ORDER BY id DESC;`)
-			return
-		},
-		"todo": func(id string) (todo Todo, err error) {
-			err = db.Get(&todo, `SELECT id, done, label FROM todos where id = ?`, id)
-			return
-		},
-		"filters": func() (filters []Filter, err error) {
-			err = db.Select(&filters,
-				`WITH f(filter) AS (VALUES ('all'),('active'),('completed'))
-				 SELECT filter, filter == (SELECT value FROM kv WHERE key = ?) as selected FROM f;`, FILTER_KEY)
-			return
-		},
-	})
+	if len(result.Rows[0]) != 1 {
+		return nil, fmt.Errorf("the query must return a single column, instead it returned %d", len(result.Rows))
+	}
+	val = result.Rows[0][0]
+	return
+}
+
+func makeParams(param any) (p objx.Map) {
+	if param != nil {
+		p = objx.Map{"p": param}
+	}
+	return
+}
+
+func must[T any](t T, err error) T {
+	if err != nil {
+		log.Fatal(err)
+	}
+	return t
 }
 
 // TemplateHandler constructs an html.Template from the provided args
@@ -192,17 +143,14 @@ func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http
 	if err != nil {
 		log.Fatal(err)
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		var routeId string
-		{
-			keys := maps.Keys(r.URL.Query())
-			sort.Strings(keys)
-			routeparts := append([]string{"hx", r.Method}, keys...)
-			if r.Header.Get("HX-Request") != "true" {
-				routeparts = routeparts[1:]
-			}
-			routeId = strings.ToLower(strings.Join(routeparts, "-"))
+	if t := tmpl.Lookup("init"); t != nil {
+		err = t.Execute(io.Discard, nil)
+		if err != nil {
+			log.Fatal(err)
 		}
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		routeId := GetRouteId(r)
 
 		log.Printf("Handling request %s at %s\n", routeId, r.URL.Path)
 
@@ -210,10 +158,24 @@ func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http
 			r.ParseForm()
 			err := t.Execute(w, r)
 			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
 				log.Print(err)
 			}
 		} else {
 			http.NotFound(w, r)
 		}
 	}
+}
+
+func GetRouteId(r *http.Request) string {
+	var prefix string
+	if r.Header.Get("HX-Request") == "true" {
+		prefix = "htmx"
+	} else {
+		prefix = "http"
+	}
+	keys := maps.Keys(r.URL.Query())
+	sort.Strings(keys)
+	routeparts := append([]string{prefix, r.Method}, keys...)
+	return strings.ToLower(strings.Join(routeparts, "-"))
 }

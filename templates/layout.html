@@ -1,38 +1,30 @@
-{{define "get"}}
+{{define "http-get"}}
 <!DOCTYPE html>
 <html>
 
 <head>
   <meta charset="UTF-8" />
   <title>{{ template "title" . }}</title>
-  <link rel="stylesheet" href="/static/water.css@2.1.1/out/water.css" />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@2.51.6/dist/full.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="/static/htmx.org@1.8.4/dist/htmx.js"></script>
-  <style>
-    nav a {
-      padding: 1em;
-      color: var(--text-bright);
-    }
-
-    nav a:hover {
-      background-color: var(--button-hover) !important;
-    }
-
-    nav a.selected {
-      background-color: var(--button-base);
-    }
-  </style>
 </head>
 
-<body>
+<body class="container mx-auto py-10">
   {{ template "body" . }}
 </body>
 
 </html>
 {{end}}
 
+{{define "htmx-get"}}
+<title>{{template "title"}}</title>
+{{ template "body" . }}
+{{end}}
+
 {{define "nav"}}
-<nav hx-target="closest body">
-  <a href="/" hx-get="/?nav" hx-push-url="/" {{if eq . "about" }}class="selected" {{end}}>About</a>
-  <a href="/todos" hx-get="/todos?nav" hx-push-url="/todos" {{if eq . "todos" }}class="selected" {{end}}>Todos</a>
+<nav hx-target="closest body" class="tabs">
+  <a href="/" hx-get="/" hx-push-url="/" class="tab tab-lg tab-lifted tab-active">About</a>
+  <a href="/todos" hx-get="/todos" hx-push-url="/todos" class="tab tab-lg tab-lifted">Todos</a>
 </nav>
 {{end}}

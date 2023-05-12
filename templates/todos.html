@@ -1,23 +1,28 @@
 {{define "title"}}Todos{{end}}
 
+{{define "init"}}
+{{query ":create todo{id:Uuid default rand_uuid_v1() => label: String, done: Bool}" nil}}
+{{end}}
+
 {{define "body"}}
-{{template "nav" "todos"}}
-<section class="todos">
+{{template "nav" .}}
+<section>
   <header>
     <h1>Todos</h1>
-    {{block "toggleall" .}}<input id="todos-toggleall" type="checkbox" {{if alldone}}checked{{end}}
+    {{block "toggleall" .}}
+    <input id="todos-toggleall" type="checkbox" {{if queryval "?[and(done)] := *todo{done}" nil}}checked{{end}}
       hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
     {{block "input" .}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus required
       hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
   </header>
   {{block "list" .}}
   <ul id="todos-list" hx-swap-oob="true">
-    {{range todos}}
+    {{range queryrows "?[id,label,done] := *todo{id,label,done}" nil}}
     {{block "todo" .}}
     <li hx-target="this" hx-swap="outerHTML">
-      <input type="checkbox" {{if .Done}}checked{{end}} hx-post="/todos?id={{.Id}}&toggle" />
-      <label>{{.Label}}</label>
-      <button class="delete" hx-delete="/todos?id={{.Id}}"></button>
+      <input type="checkbox" {{if .done}}checked{{end}} hx-post="/todos?id={{.id}}&toggle" />
+      <label>{{.label}}</label>
+      <button class="delete" hx-delete="/todos?id={{.id}}"></button>
     </li>
     {{end}}
     {{end}}
@@ -25,112 +30,61 @@
   {{end}}
   <footer>
     {{block "count" .}}
-    {{$count := countdone}}
+    {{$count := queryval "?[count(done)] := *todo{done},done=false" nil}}
     <span id="todos-count" hx-swap-oob="true">
-      <strong>{{$count}}</strong> {{if eq $count 1}}item{{else}}items{{end}} left
+      <strong>{{$count}}</strong> {{if eq $count 1.}}item{{else}}items{{end}} left
     </span>
     {{end}}
     <br />
     {{block "filter" .}}
     <fieldset class="filter" hx-swap="none">
       <legend>Filter</legend>
-      {{range filters}}
-      <input type="radio" id="filter-{{.Filter}}" name="filter" value="{{.Filter}}" {{if .Selected}}checked{{end}}
-        hx-post="./todos?filter={{.Filter}}" />
-      <label for="filter-{{.Filter}}">{{.Filter}}</label>
+      {{ range queryrows "?[filter,selected] <- [['all',true],['done',false],['remaining',false]]" nil }} <input
+        type="radio" id="filter-{{.filter}}" name="filter" value="{{.filter}}" {{if .selected}}checked{{end}}
+        hx-post="./todos?filter={{.filter}}" />
+      <label for="filter-{{.filter}}">{{.filter}}</label>
       {{end}}
     </fieldset>
     {{end}}
   </footer>
 </section>
-<style>
-  .todos {
-    font-size: 1.5em;
-  }
-
-  .todos input {
-    vertical-align: middle;
-    display: inline-block;
-  }
-
-  .todos header input[type=checkbox] {
-    font-size: 1.5em;
-  }
-
-  .todos ul {
-    list-style-type: none;
-    padding-left: 0;
-  }
-
-  .todos li {
-    position: relative;
-  }
-
-  .todos li>input[type=checkbox]:checked+label {
-    text-decoration: line-through;
-    color: var(--text-muted);
-  }
-
-  .todos button.delete {
-    position: absolute;
-    right: 0;
-    padding: 0;
-    background-color: var(--background-body);
-    color: #af5b5e;
-    overflow: hidden;
-  }
-
-  .todos button.delete:after {
-    position: relative;
-    top: -.2em;
-    content: '×';
-    font-size: 1.5em;
-  }
-
-  .filter {
-    max-width: fit-content;
-  }
-
-  .filter label {
-    text-transform: capitalize;
-  }
-</style>
 {{end}}
 
-{{define "hx-get-nav"}}
-<title>{{template "title"}}</title>
-{{template "body" .}}
-{{end}}
-
-{{define "hx-post-new"}}
-{{$todo := index .Form.newtodo 0 | new}}
+{{define "htmx-post-new"}}
+{{$todo := .Form.newtodo | idx 0 | queryrow `
+{ ?[label,done] := label=$p,done=false; :put todo{label,done} }
+{ ?[id,label,done] := *todo{id,done,label},label=$p }`
+}}
 {{template "todo" $todo}}
 {{template "toggleall"}}
 {{template "count"}}
 {{template "input"}}
 {{end}}
 
-{{define "hx-post-toggleall"}}
-{{$_ := toggleall}}
+{{define "htmx-post-toggleall"}}
+{$_ := toggleall}
 {{template "list"}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
-{{define "hx-post-id-toggle"}}
-{{$todo := index .Form.id 0 | toggle}}
+{{define "htmx-post-id-toggle"}}
+{{$todo := .Form.id | idx 0 | queryrows `
+{ ?[id,done] := id=to_uuid($p),*todo{id,done:done0}, done = !done0; :update todo{id,done} }
+{ ?[id,label,done] := id=to_uuid($p),*todo{id,label,done} }`
+}}
 {{template "todo" $todo}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
-{{define "hx-delete-id"}}
-{{$_ := index .Form.id 0 | delete}}
+{{define "htmx-delete-id"}}
+{{$_ := .Form.id | idx 0 | query `?[id] := id=$p; :rm todo{id}`}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
-{{define "hx-post-filter"}}
-{{$_ := index .Form.filter 0 | filter}}
+{{define "htmx-post-filter"}}
+{$_ := .Form.filter | idx 0 | filter}
 {{template "list"}}
 {{end}}
