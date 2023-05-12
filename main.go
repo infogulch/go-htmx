@@ -106,6 +106,7 @@ func QueryVal(db cozo.CozoDB, query string, params objx.Map) (val any, err error
 }
 
 func makeParams(param any) (p objx.Map) {
+	// log.Printf("Param: %T:%+v\n", param, param)
 	if param != nil {
 		p = objx.Map{"p": param}
 	}
@@ -158,7 +159,7 @@ func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http
 			r.ParseForm()
 			err := t.Execute(w, r)
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
+				// w.WriteHeader(http.StatusInternalServerError)
 				log.Print(err)
 			}
 		} else {

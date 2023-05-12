@@ -1,4 +1,4 @@
-module todo-go
+module go-htmx
 
 go 1.19
 

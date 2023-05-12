@@ -1,6 +1,5 @@
-{{define "title"}}Todos{{end}}
-
 {{define "init"}}
+{{template "init0"}}
 {{query ":create todo{id:Uuid default rand_uuid_v1() => label: String, done: Bool}" nil}}
 {{end}}
 
@@ -10,7 +9,8 @@
   <header>
     <h1>Todos</h1>
     {{block "toggleall" .}}
-    <input id="todos-toggleall" type="checkbox" {{if queryval "?[and(done)] := *todo{done}" nil}}checked{{end}}
+    {{ $alldone := queryval "r[and(done),count(done)] := *todo{done}; ?[alldone] := r[a,c],alldone=a&&c>0" nil}}
+    <input id="todos-toggleall" type="checkbox" {{if $alldone}}checked{{end}}
       hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
     {{block "input" .}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus required
       hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
@@ -62,24 +62,28 @@
 {{end}}
 
 {{define "htmx-post-toggleall"}}
-{$_ := toggleall}
+{{$_ := query `
+alldone[and(done)] := *todo{done}
+?[id,done] := alldone[done0],done=!done0,*todo{id}
+:update todo{id,done}
+` nil}}
 {{template "list"}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
 {{define "htmx-post-id-toggle"}}
-{{$todo := .Form.id | idx 0 | queryrows `
-{ ?[id,done] := id=to_uuid($p),*todo{id,done:done0}, done = !done0; :update todo{id,done} }
-{ ?[id,label,done] := id=to_uuid($p),*todo{id,label,done} }`
-}}
+{{$todo := .Form.id | idx 0 | queryrow `
+{ ?[id,done] := id=to_uuid($p),*todo{id,done:done0},done=!done0; :update todo{id,done} }
+{ ?[id,label,done] := id=to_uuid($p),*todo{id,label,done} }
+`}}
 {{template "todo" $todo}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
 {{define "htmx-delete-id"}}
-{{$_ := .Form.id | idx 0 | query `?[id] := id=$p; :rm todo{id}`}}
+{{$_ := .Form.id | idx 0 | query `?[id] := id=to_uuid($p); :rm todo{id}`}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}

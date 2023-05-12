@@ -1,10 +1,21 @@
+{{define "init0"}}
+{{query `
+?[name,path] <- [['Home','/'],['Todos','/todos']];
+:replace pages{name,path}
+` nil}}
+{{end}}
+
+{{define "title"}}
+<title>{{queryval `?[name] := *pages{name,path},path=$p` .URL.Path}}</title>
+{{end}}
+
 {{define "http-get"}}
 <!DOCTYPE html>
 <html>
 
 <head>
   <meta charset="UTF-8" />
-  <title>{{ template "title" . }}</title>
+  {{template "title" .}}
   <link href="https://cdn.jsdelivr.net/npm/daisyui@2.51.6/dist/full.css" rel="stylesheet" type="text/css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/static/htmx.org@1.8.4/dist/htmx.js"></script>
@@ -18,13 +29,15 @@
 {{end}}
 
 {{define "htmx-get"}}
-<title>{{template "title"}}</title>
-{{ template "body" . }}
+{{template "title" .}}
+{{template "body" .}}
 {{end}}
 
 {{define "nav"}}
 <nav hx-target="closest body" class="tabs">
-  <a href="/" hx-get="/" hx-push-url="/" class="tab tab-lg tab-lifted tab-active">About</a>
-  <a href="/todos" hx-get="/todos" hx-push-url="/todos" class="tab tab-lg tab-lifted">Todos</a>
+  {{range queryrows `?[name,path,selected] := *pages{name,path},url=$p,selected=url==path` .URL.Path}}
+  <a href="{{.path}}" hx-get="{{.path}}" hx-push-url="{{.path}}"
+    class="tab tab-lg tab-lifted {{if .selected}}tab-active{{end}}">{{.name}}</a>
+  {{end}}
 </nav>
 {{end}}
