@@ -1,4 +1,4 @@
-{{define "init0"}}
+{{define "init-_layout"}}
 {{query `
 ?[name,path] <- [['Home','/'],['Todos','/todos']];
 :replace pages{name,path}
@@ -6,7 +6,7 @@
 {{end}}
 
 {{define "title"}}
-<title>{{queryval `?[name] := *pages{name,path},path=$p` .URL.Path}}</title>
+<title>{{queryval `?[name] := *pages{name,path:$path}` (dict "path" .URL.Path)}}</title>
 {{end}}
 
 {{define "http-get"}}
@@ -22,7 +22,7 @@
 </head>
 
 <body class="container mx-auto py-10">
-  {{ template "body" . }}
+  {{template "body" .}}
 </body>
 
 </html>
@@ -35,7 +35,7 @@
 
 {{define "nav"}}
 <nav hx-target="closest body" class="tabs">
-  {{range queryrows `?[name,path,selected] := *pages{name,path},url=$p,selected=url==path` .URL.Path}}
+  {{range queryrows `?[name,path,selected] := *pages{name,path},selected=(path==$path)` (dict "path" .URL.Path)}}
   <a href="{{.path}}" hx-get="{{.path}}" hx-push-url="{{.path}}"
     class="tab tab-lg tab-lifted {{if .selected}}tab-active{{end}}">{{.name}}</a>
   {{end}}

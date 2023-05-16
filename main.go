@@ -1,123 +1,153 @@
 package main
 
 import (
-	"embed"
-	"fmt"
+	"context"
 	"html/template"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
-	"reflect"
+	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/cozodb/cozo-lib-go"
-	"github.com/stretchr/objx"
 	"golang.org/x/exp/maps"
 )
 
-type TemplateFS interface {
-	fs.ReadDirFS
+var config = struct {
+	ShutdownDelayTolerance time.Duration
+	ReloadDebounceDelay    time.Duration
+}{
+	ShutdownDelayTolerance: 5 * time.Second,
+	ReloadDebounceDelay:    100 * time.Millisecond,
 }
-
-//go:embed templates static
-var EmbedFiles embed.FS
-
-var Files fs.FS = os.DirFS(".") /* EmbedFiles */
 
 func main() {
-	templates := must(fs.Sub(Files, "templates")).(TemplateFS)
-	db := must(cozo.New("mem", "", nil))
-
-	funcs := template.FuncMap{
-		"query": func(query string, params any) (cozo.NamedRows, error) {
-			return db.Run(query, makeParams(params))
-		},
-		"queryrows": func(query string, params any) ([]map[string]any, error) {
-			return QueryRows(db, query, makeParams(params))
-		},
-		"queryrow": func(query string, params any) (map[string]any, error) {
-			return QueryRow(db, query, makeParams(params))
-		},
-		"queryval": func(query string, params any) (any, error) {
-			return QueryVal(db, query, makeParams(params))
-		},
-		"idx": func(idx int, arr any) any {
-			return reflect.ValueOf(arr).Index(idx).Interface()
-		},
-	}
-
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(must(fs.Sub(Files, "static"))))))
-	http.HandleFunc("/", TemplateHandler(templates, []string{"layout.html", "index.html"}, funcs))
-	http.HandleFunc("/todos", TemplateHandler(templates, []string{"layout.html", "todos.html"}, funcs))
-
-	log.Print("Starting server...")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
-}
-
-func QueryRows(db cozo.CozoDB, query string, params objx.Map) (rows []map[string]any, err error) {
-	var result cozo.NamedRows
-	result, err = db.Run(query, params)
-	if err != nil {
-		return
-	}
-	for _, row := range result.Rows {
-		rowmap := map[string]any{}
-		for colidx, colname := range result.Headers {
-			rowmap[colname] = row[colidx]
-		}
-		rows = append(rows, rowmap)
-	}
-	return
-}
-
-func QueryRow(db cozo.CozoDB, query string, params objx.Map) (row map[string]any, err error) {
-	var result cozo.NamedRows
-	result, err = db.Run(query, params)
-	if err != nil {
-		return
-	}
-	if len(result.Rows) != 1 {
-		return nil, fmt.Errorf("the query must return a single row, instead it returned %d", len(result.Rows))
-	}
-	row = map[string]any{}
-	for colidx, colname := range result.Headers {
-		row[colname] = result.Rows[0][colidx]
-	}
-	return
-}
-
-func QueryVal(db cozo.CozoDB, query string, params objx.Map) (val any, err error) {
-	var result cozo.NamedRows
-	result, err = db.Run(query, params)
-	if err != nil {
-		return
-	}
-	if len(result.Rows) != 1 {
-		return nil, fmt.Errorf("the query must return a single row, instead it returned %d", len(result.Rows))
-	}
-	if len(result.Rows[0]) != 1 {
-		return nil, fmt.Errorf("the query must return a single column, instead it returned %d", len(result.Rows))
-	}
-	val = result.Rows[0][0]
-	return
-}
-
-func makeParams(param any) (p objx.Map) {
-	// log.Printf("Param: %T:%+v\n", param, param)
-	if param != nil {
-		p = objx.Map{"p": param}
-	}
-	return
-}
-
-func must[T any](t T, err error) T {
+	watcher, err := NewWatcher("./static", "./templates")
 	if err != nil {
 		log.Fatal(err)
 	}
-	return t
+	defer watcher.Close()
+
+	sigterm := make(chan os.Signal)
+	signal.Notify(sigterm, os.Interrupt, syscall.SIGINT)
+	signal.Notify(sigterm, os.Interrupt, syscall.SIGKILL)
+	signal.Notify(sigterm, os.Interrupt, syscall.SIGUSR1)
+	defer signal.Reset()
+
+	handler, err := NewHandler()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+server:
+	for {
+		server := http.Server{
+			Handler: handler,
+			Addr:    "0.0.0.0:8080",
+		}
+
+		// setup event handler
+		action := make(chan string)
+		go func() {
+			act := ""
+			select {
+			case event, ok := <-watcher.Events:
+				log.Printf("Restarting server due to file changed: %s %s (ok:%t)", event.Op, event.Name, ok)
+				act = "reload"
+			case sig := <-sigterm:
+				log.Printf("Shutting down server due to %s", sig)
+				act = "shutdown"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), config.ShutdownDelayTolerance)
+			err := server.Shutdown(ctx)
+			log.Printf("Server shut down: %v", err)
+			action <- act
+			cancel()
+		}()
+
+		log.Println("Starting server...")
+		err = server.ListenAndServe()
+		if err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+
+		switch <-action {
+		case "reload":
+			watcher.Debounce(config.ReloadDebounceDelay)
+			newHandler, err := NewHandler()
+			if err != nil {
+				log.Printf("Failed to make a new server, restarting previous server. Error: %e", err)
+			} else {
+				handler = newHandler
+			}
+			continue server
+		case "shutdown":
+			break server
+		default:
+			break server
+		}
+	}
+	log.Println("Bye")
+}
+
+func NewHandler() (http.Handler, error) {
+	db, err := cozo.New("mem", "", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	funcs := NewFuncs(db)
+
+	handler := http.NewServeMux()
+
+	// Serve files from static dir
+	if staticFS, err := fs.Sub(Files, "static"); err == nil {
+		fileServer := http.FileServer(http.FS(staticFS))
+		// fileServer := statigz.FileServer(staticFS, brotli.AddEncoding)
+		handler.Handle("/static/", http.StripPrefix("/static/", fileServer))
+	}
+
+	// find var Files in embed.go/embed0.go
+	templateFS, err := fs.Sub(Files, "templates")
+	if err != nil {
+		return nil, err
+	}
+	// Set up template files
+	sharedFiles, err := fs.Glob(templateFS, "_*.html")
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(sharedFiles)
+	pageFiles, err := fs.Glob(templateFS, "[^_]*.html")
+	if err != nil {
+		return nil, err
+	}
+	// log.Printf("Found template files: shared: %+v; pages: %+v", sharedFiles, pageFiles)
+
+	for _, pageFile := range pageFiles {
+		var path string
+		if filepath.Base(pageFile) == "index.html" {
+			path = filepath.Clean(filepath.Join("/", filepath.Dir(pageFile), "/"))
+		} else {
+			path = "/" + filepath.Clean(pageFile)
+		}
+		route := strings.TrimSuffix(path, filepath.Ext(path))
+		files := append(append([]string(nil), sharedFiles...), pageFile)
+		pageHandler, err := TemplateHandler(templateFS, files, funcs)
+		if err != nil {
+			return nil, err
+		}
+		handler.Handle(route, pageHandler)
+	}
+
+	return handler, nil
 }
 
 // TemplateHandler constructs an html.Template from the provided args
@@ -139,15 +169,22 @@ func must[T any](t T, err error) T {
 // - HTTP POST with nav param: post-nav
 // - HTTP DELETE with HX-Request header and id param: hx-delete-id
 // - HTTP POST with tYPe and iD params: post-id-type
-func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http.HandlerFunc {
-	tmpl, err := template.New(files[0]).Funcs(funcs).ParseFS(fs, files...)
+func TemplateHandler(fs fs.FS, files []string, funcs template.FuncMap) (http.HandlerFunc, error) {
+	name := files[len(files)-1]
+	tmpl, err := template.New(name).Funcs(funcs).ParseFS(fs, files...)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	if t := tmpl.Lookup("init"); t != nil {
-		err = t.Execute(io.Discard, nil)
-		if err != nil {
-			log.Fatal(err)
+	// log.Printf("Setting up handler for %v", files)
+	for _, file := range files {
+		name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+
+		if t := tmpl.Lookup("init-" + name); t != nil {
+			// log.Printf("Initializing %s", name)
+			err = t.Execute(io.Discard, nil)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -157,15 +194,33 @@ func TemplateHandler(fs TemplateFS, files []string, funcs template.FuncMap) http
 
 		if t := tmpl.Lookup(routeId); t != nil {
 			r.ParseForm()
-			err := t.Execute(w, r)
+			data := struct {
+				Method   string
+				URL      *url.URL
+				Header   http.Header
+				Form     url.Values
+				PostForm url.Values
+				Body     io.ReadCloser
+				// Future: User
+			}{
+				Method:   r.Method,
+				URL:      r.URL,
+				Header:   r.Header,
+				Form:     r.Form,
+				PostForm: r.PostForm,
+				Body:     r.Body,
+			}
+			err := t.Execute(w, data)
 			if err != nil {
+				// Future: Render to buffer first, then set status and write it to http.ResponseWriter.
+				// Use a buffer pool. See: https://medium.com/@leeprovoost/dealing-with-go-template-errors-at-runtime-1b429e8b854a
 				// w.WriteHeader(http.StatusInternalServerError)
 				log.Print(err)
 			}
 		} else {
 			http.NotFound(w, r)
 		}
-	}
+	}, nil
 }
 
 func GetRouteId(r *http.Request) string {
@@ -179,4 +234,11 @@ func GetRouteId(r *http.Request) string {
 	sort.Strings(keys)
 	routeparts := append([]string{prefix, r.Method}, keys...)
 	return strings.ToLower(strings.Join(routeparts, "-"))
+}
+
+func must[T any](t T, err error) T {
+	if err != nil {
+		log.Fatal(err)
+	}
+	return t
 }
