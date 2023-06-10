@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log"
 	"reflect"
+	"time"
 
 	"github.com/cozodb/cozo-lib-go"
 )
@@ -25,18 +27,25 @@ func NewFuncs(db cozo.CozoDB) template.FuncMap {
 		"queryval": func(query string, params Params) (val any, err error) {
 			return QueryVal(db, query, params)
 		},
+		"initrelation": func(query string, relation string, params Params) (cozo.NamedRows, error) {
+			return InitRelation(db, query, relation, params)
+		},
 		"idx":  Idx,
 		"dict": Dict,
+		"list": List,
 	}
 }
 
-func Query(db cozo.CozoDB, query string, params Params) (cozo.NamedRows, error) {
-	return db.Run(query, (map[string]any)(params))
+func Query(db cozo.CozoDB, query string, params Params) (result cozo.NamedRows, err error) {
+	result, err = db.Run(query, (map[string]any)(params))
+	// LogQuery("QueryVal", query, result)
+	return
 }
 
 func QueryRows(db cozo.CozoDB, query string, params Params) (rows []map[string]any, err error) {
 	var result cozo.NamedRows
 	result, err = db.Run(query, (map[string]any)(params))
+	// LogQuery("QueryVal", query, result)
 	if err != nil {
 		return
 	}
@@ -53,6 +62,7 @@ func QueryRows(db cozo.CozoDB, query string, params Params) (rows []map[string]a
 func QueryRow(db cozo.CozoDB, query string, params Params) (row map[string]any, err error) {
 	var result cozo.NamedRows
 	result, err = db.Run(query, (map[string]any)(params))
+	// LogQuery("QueryVal", query, result)
 	if err != nil {
 		return
 	}
@@ -69,6 +79,7 @@ func QueryRow(db cozo.CozoDB, query string, params Params) (row map[string]any, 
 func QueryVal(db cozo.CozoDB, query string, params Params) (val any, err error) {
 	var result cozo.NamedRows
 	result, err = db.Run(query, (map[string]any)(params))
+	// LogQuery("QueryVal", query, result)
 	if err != nil {
 		return
 	}
@@ -80,6 +91,28 @@ func QueryVal(db cozo.CozoDB, query string, params Params) (val any, err error) 
 	}
 	val = result.Rows[0][0]
 	return
+}
+
+func InitRelation(db cozo.CozoDB, query string, relation string, params Params) (result cozo.NamedRows, err error) {
+	relations, err := db.Run("::relations", nil)
+	LogQuery("InitRelation", query, relations)
+	for _, rel := range relations.Rows {
+		if rel[0] == relation {
+			return
+		}
+	}
+	result, err = db.Run(query, (map[string]any)(params))
+	LogQuery("InitRelation", query, result)
+	return
+}
+
+func LogQuery(kind string, query string, result cozo.NamedRows) {
+	log.Printf("%s: %+v", kind, struct {
+		QueryString string
+		Duration    time.Duration
+		RowCount    int
+		HeaderCount int
+	}{query, time.Duration(result.Took * float64(time.Second)), len(result.Rows), len(result.Headers)})
 }
 
 // https://github.com/gohugoio/hugo/blob/6aededf6b42011c3039f5f66487a89a8dd65e0e7/tpl/collections/collections.go#L162
@@ -120,6 +153,10 @@ func Dict(values ...any) (map[string]any, error) {
 	}
 
 	return root, nil
+}
+
+func List(values ...any) []any {
+	return values
 }
 
 func Idx(idx int, arr any) any {

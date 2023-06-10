@@ -1,25 +1,8 @@
-{{define "init-index"}}
-{{query "?[c] := c = 0; :replace counter{=>c}" nil}}
-{{end}}
-
 {{define "body"}}
 {{template "nav" .}}
-<h1>HTMX + Go templates</h1>
+<h1>About</h1>
 <div>
-  <p>This is a simple proof of concept using Go (golang) templates to render plain HTML content in response
-    to HTTP requests made by the browser and the HTMX javascript library, which makes for surprisingly
-    seamless development experience.</p>
-  <button class="btn" hx-post="?clicked" hx-swap="innerHTML" hx-target="#inc">Increment Counter</button>
-  <div id="inc">
-    {{block "clicked" queryval "?[c] := *counter{c}" nil}}
-    <p>Clicked count: {{ . }}</p>
-    {{end}}
-  </div>
+  <p>This is a server-oriented web framework to quickly develop hightly interactive sites with minimal complexity.</p>
+  <p>Try out some pages for examples.</p>
 </div>
-{{end}}
-
-{{define "htmx-post-clicked"}}
-{{template "clicked" queryval `
-{ ?[c] := *counter{c: c0}, c = c0+1; :put counter{c} }
-{ ?[c] := *counter{c}; }` nil}}
 {{end}}

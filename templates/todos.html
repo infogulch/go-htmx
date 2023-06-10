@@ -1,55 +1,65 @@
 {{define "init-todos"}}
-{{query ":create todo{id:Uuid default rand_uuid_v1() => label: String, done: Bool}" nil}}
+{{initrelation "todo" ":create todo{id:Uuid default rand_uuid_v1() => label: String, done: Bool}" nil}}
 {query ":create filter"}
 {{end}}
 
 {{define "body"}}
 {{template "nav" .}}
-<section>
-  <header>
-    <h1>Todos</h1>
+<section class="max-w-md mx-auto">
+  <header class="input-group py-4">
     {{block "toggleall" .}}
     {{$alldone := queryval "r[and(done),count(done)] := *todo{done}; ?[alldone] := r[a,c],alldone=a&&c>0" nil}}
     <input id="todos-toggleall" type="checkbox" {{if $alldone}}checked{{end}}
-      hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true" />{{end}}
-    {{block "input" .}}<input id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus required
-      hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true" />{{end}}
+      hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true"
+      class="checkbox checkbox-lg" />
+    {{end}}
+    {{block "input" .}}
+    <input type="text" id="newtodo" name="newtodo" placeholder="What needs to be done?" autofocus required
+      hx-post="/todos?new" hx-target="#todos-list" hx-swap="afterbegin" hx-swap-oob="true"
+      class="input input-sm w-full" />
+    {{end}}
   </header>
   {{block "list" .}}
   <ul id="todos-list" hx-swap-oob="true">
-    {{range queryrows "?[id,label,done] := *todo{id,label,done}" nil}}
+    {{range queryrows "?[id,label,done] := *todo{id,label,done} :order -id" nil}}
     {{block "todo" .}}
-    <li hx-target="this" hx-swap="outerHTML">
-      <input type="checkbox" {{if .done}}checked{{end}} hx-post="/todos?id={{.id}}&toggle" />
-      <label>{{.label}}</label>
-      <button hx-delete="/todos?id={{.id}}"></button>
+    <li class="input-group py-1" hx-target="this" hx-swap="outerHTML">
+      <input class="checkbox" type="checkbox" {{if .done}}checked{{end}} hx-post="/todos?id={{.id}}&toggle" />
+      <label class="label-text w-full mx-2">{{.label}}</label>
+      <button class="button btn-error px-2" hx-delete="/todos?id={{.id}}">✕</button>
     </li>
     {{end}}
     {{end}}
   </ul>
   {{end}}
-  <footer>
+  <footer class="mt-5 flex flex-row">
     {{block "count" .}}
     {{$count := queryval "?[count(done)] := *todo{done},done=false" nil}}
     <span id="todos-count" hx-swap-oob="true">
       <strong>{{$count}}</strong> {{if eq $count 1.}}item{{else}}items{{end}} left
     </span>
     {{end}}
-    <br />
-    <fieldset hx-swap="none">
-      <legend>Filter</legend>
-      {{range queryrows "?[filter,selected] <- [['all',true],['done',false],['remaining',false]]" nil}}
-      <input type="radio" id="filter-{{.filter}}" name="filter" value="{{.filter}}" {{if .selected}}checked{{end}}
+    <div class="grow"></div>
+    <fieldset class="flex-end" hx-swap="none">
+      {{range queryrows "?[filter,selected] <- [['all',true],['completed',false],['remaining',false]]" nil}}
+      <input class="radio inline-block align-middle ml-4"
+        type="radio" id="filter-{{.filter}}" name="filter" value="{{.filter}}" {{if .selected}}checked{{end}}
         hx-post="./todos?filter={{.filter}}" />
-      <label for="filter-{{.filter}}">{{.filter}}</label>
+      <label class="label-text capitalize inline-block align-middle cursor-pointer"
+        for="filter-{{.filter}}">{{.filter}}</label>
       {{end}}
     </fieldset>
   </footer>
 </section>
+<style>
+  input[type=checkbox]:checked+label {
+    text-decoration: line-through;
+  }
+</style>
 {{end}}
 
 {{define "htmx-post-new"}}
-{{$todo := .Form.newtodo | idx 0 | dict "label" | queryrow `
+{{$todo := .PostForm.newtodo | idx 0 | dict "label" | queryrow `
 { ?[label,done] := label=$label,done=false; :put todo{label,done} }
 { ?[id,label,done] := *todo{id,done,label},label=$label }`
 }}

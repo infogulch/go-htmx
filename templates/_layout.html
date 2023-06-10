@@ -1,7 +1,7 @@
 {{define "init-_layout"}}
 {{query `
-?[name,path] <- [['Home','/'],['Todos','/todos']];
-:replace pages{name,path}
+?[name,path,ord] <- [['Home','/',0],['Counter','/counter',1],['Todos','/todos',2]];
+:replace pages{name,path,ord}
 ` nil}}
 {{end}}
 
@@ -34,10 +34,10 @@
 {{end}}
 
 {{define "nav"}}
-<nav hx-target="closest body" class="tabs">
-  {{range queryrows `?[name,path,selected] := *pages{name,path},selected=(path==$path)` (dict "path" .URL.Path)}}
-  <a href="{{.path}}" hx-get="{{.path}}" hx-push-url="{{.path}}"
-    class="tab tab-lg tab-lifted {{if .selected}}tab-active{{end}}">{{.name}}</a>
+<nav class="navbar bg-base-100" hx-target="closest body">
+  {{range queryrows `?[name,path,selected,ord] := *pages{name,path,ord},selected=(path==$path) :order ord` (dict "path" .URL.Path)}}
+  <a class="btn {{if .selected}}btn-active{{else}}btn-ghost{{end}}" href="{{.path}}" hx-get="{{.path}}"
+    hx-push-url="{{.path}}">{{.name}}</a>
   {{end}}
 </nav>
 {{end}}

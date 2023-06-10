@@ -98,7 +98,7 @@ server:
 }
 
 func NewHandler() (http.Handler, error) {
-	db, err := cozo.New("mem", "", nil)
+	db, err := cozo.New("sqlite", "todos.db", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +190,10 @@ func TemplateHandler(fs fs.FS, files []string, funcs template.FuncMap) (http.Han
 	return func(w http.ResponseWriter, r *http.Request) {
 		routeId := GetRouteId(r)
 
-		log.Printf("Handling request %s at %s\n", routeId, r.URL.Path)
+		var err error
+		defer func(start time.Time) {
+			log.Printf("Handled request %s?%s in %v. Error: %v\n", r.URL.Path, routeId, time.Since(start), err)
+		}(time.Now())
 
 		if t := tmpl.Lookup(routeId); t != nil {
 			r.ParseForm()
@@ -210,13 +213,7 @@ func TemplateHandler(fs fs.FS, files []string, funcs template.FuncMap) (http.Han
 				PostForm: r.PostForm,
 				Body:     r.Body,
 			}
-			err := t.Execute(w, data)
-			if err != nil {
-				// Future: Render to buffer first, then set status and write it to http.ResponseWriter.
-				// Use a buffer pool. See: https://medium.com/@leeprovoost/dealing-with-go-template-errors-at-runtime-1b429e8b854a
-				// w.WriteHeader(http.StatusInternalServerError)
-				log.Print(err)
-			}
+			err = t.Execute(w, data)
 		} else {
 			http.NotFound(w, r)
 		}
@@ -230,8 +227,20 @@ func GetRouteId(r *http.Request) string {
 	} else {
 		prefix = "http"
 	}
+
 	keys := maps.Keys(r.URL.Query())
 	sort.Strings(keys)
+	{ // filter out url parameters that start with _
+		i := 0
+		for j := 0; j < len(keys); j++ {
+			if !strings.HasPrefix(keys[j], "_") {
+				keys[i] = keys[j]
+				i++
+			}
+		}
+		keys = keys[:i]
+	}
+
 	routeparts := append([]string{prefix, r.Method}, keys...)
 	return strings.ToLower(strings.Join(routeparts, "-"))
 }
