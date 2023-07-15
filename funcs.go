@@ -27,8 +27,8 @@ func NewFuncs(db cozo.CozoDB) template.FuncMap {
 		"queryval": func(query string, params Params) (val any, err error) {
 			return QueryVal(db, query, params)
 		},
-		"initrelation": func(query string, relation string, params Params) (cozo.NamedRows, error) {
-			return InitRelation(db, query, relation, params)
+		"initrelation": func(relation string, query string, params Params) (cozo.NamedRows, error) {
+			return InitRelation(db, relation, query, params)
 		},
 		"idx":  Idx,
 		"dict": Dict,
@@ -93,7 +93,8 @@ func QueryVal(db cozo.CozoDB, query string, params Params) (val any, err error) 
 	return
 }
 
-func InitRelation(db cozo.CozoDB, query string, relation string, params Params) (result cozo.NamedRows, err error) {
+func InitRelation(db cozo.CozoDB, relation string, query string, params Params) (result cozo.NamedRows, err error) {
+
 	relations, err := db.Run("::relations", nil)
 	LogQuery("InitRelation", query, relations)
 	for _, rel := range relations.Rows {

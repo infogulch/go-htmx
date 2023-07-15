@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"html/template"
 	"io"
@@ -213,7 +214,9 @@ func TemplateHandler(fs fs.FS, files []string, funcs template.FuncMap) (http.Han
 				PostForm: r.PostForm,
 				Body:     r.Body,
 			}
-			err = t.Execute(w, data)
+			var buffer bytes.Buffer
+			err = t.Execute(&buffer, data)
+			w.Write(buffer.Bytes())
 		} else {
 			http.NotFound(w, r)
 		}
