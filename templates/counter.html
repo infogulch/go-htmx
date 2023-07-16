@@ -1,20 +1,21 @@
 {{define "init-counter"}}
-{{initrelation "?[c] := c = 0; :create counter{=>c}" "counter" nil}}
+{{exec "CREATE TEMP TABLE IF NOT EXISTS counter AS SELECT 0 as c"}}
 {{end}}
 
 {{define "body"}}
 {{template "nav" .}}
 <div class="max-w-xs mx-auto">
-    <button class="btn" hx-post="?clicked" hx-swap="innerHTML" hx-target="#inc">Increment Counter</button>
-    <div id="inc">
-        {{block "clicked" queryval "?[c] := *counter{c}" nil}}
-        <p>Clicked count: {{ . }}</p>
-        {{end}}
-    </div>
+  <button class="btn" hx-post="?clicked" hx-swap="innerHTML" hx-target="#inc">Increment Counter</button>
+  <div id="inc">
+    {{block "clicked" .}}
+    {{$c := queryval "SELECT c FROM counter" }}
+    <p>Clicked {{ $c }} {{if eq $c 1}}time{{else}}times{{end}}</p>
+    {{end}}
+  </div>
 </div>
 {{end}}
 
 {{define "htmx-post-clicked"}}
-{{$c := queryval `{ ?[c] := *counter{c: c0}, c = c0+1; :put counter{c} :returning }` nil}}
-{{template "clicked" $c}}
+{{$_ := exec `UPDATE counter SET c = c + 1`}}
+{{template "clicked" .}}
 {{end}}

@@ -17,8 +17,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cozodb/cozo-lib-go"
 	"golang.org/x/exp/maps"
+
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var config = struct {
@@ -38,7 +40,7 @@ func main() {
 
 	sigterm := make(chan os.Signal)
 	signal.Notify(sigterm, os.Interrupt, syscall.SIGINT)
-	signal.Notify(sigterm, os.Interrupt, syscall.SIGKILL)
+	signal.Notify(sigterm, os.Interrupt, syscall.SIGTERM)
 	signal.Notify(sigterm, os.Interrupt, syscall.SIGUSR1)
 	defer signal.Reset()
 
@@ -99,7 +101,7 @@ server:
 }
 
 func NewHandler() (http.Handler, error) {
-	db, err := cozo.New("sqlite", "todos.db", nil)
+	db, err := sqlx.Open("sqlite3", "todos.db?_journal=WAL&_vacuum=full&_foreign_keys=true&_synchronous=NORMAL")
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +143,7 @@ func NewHandler() (http.Handler, error) {
 		}
 		route := strings.TrimSuffix(path, filepath.Ext(path))
 		files := append(append([]string(nil), sharedFiles...), pageFile)
-		pageHandler, err := TemplateHandler(templateFS, files, funcs)
+		pageHandler, err := TemplateHandler(templateFS, route, files, funcs)
 		if err != nil {
 			return nil, err
 		}
@@ -170,13 +172,12 @@ func NewHandler() (http.Handler, error) {
 // - HTTP POST with nav param: post-nav
 // - HTTP DELETE with HX-Request header and id param: hx-delete-id
 // - HTTP POST with tYPe and iD params: post-id-type
-func TemplateHandler(fs fs.FS, files []string, funcs template.FuncMap) (http.HandlerFunc, error) {
-	name := files[len(files)-1]
-	tmpl, err := template.New(name).Funcs(funcs).ParseFS(fs, files...)
+func TemplateHandler(fs fs.FS, route string, files []string, funcs template.FuncMap) (http.HandlerFunc, error) {
+	tmpl, err := template.New(route).Funcs(funcs).ParseFS(fs, files...)
 	if err != nil {
 		return nil, err
 	}
-	// log.Printf("Setting up handler for %v", files)
+	log.Printf("Setting up handler for %s %v", route, files)
 	for _, file := range files {
 		name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 
@@ -192,8 +193,13 @@ func TemplateHandler(fs fs.FS, files []string, funcs template.FuncMap) (http.Han
 		routeId := GetRouteId(r)
 
 		var err error
+		var status int
 		defer func(start time.Time) {
-			log.Printf("Handled request %s?%s in %v. Error: %v\n", r.URL.Path, routeId, time.Since(start), err)
+			var suffix string
+			if err != nil {
+				suffix = ". Error: "
+			}
+			log.Printf("handled %s in %v with %d%s%v\n", routeId, time.Since(start), status, suffix, err)
 		}(time.Now())
 
 		if t := tmpl.Lookup(routeId); t != nil {
@@ -216,9 +222,15 @@ func TemplateHandler(fs fs.FS, files []string, funcs template.FuncMap) (http.Han
 			}
 			var buffer bytes.Buffer
 			err = t.Execute(&buffer, data)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				status = http.StatusInternalServerError
+			}
 			w.Write(buffer.Bytes())
+			status = http.StatusOK
 		} else {
 			http.NotFound(w, r)
+			status = http.StatusNotFound
 		}
 	}, nil
 }

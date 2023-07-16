@@ -1,119 +1,73 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
 	"reflect"
-	"time"
 
-	"github.com/cozodb/cozo-lib-go"
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 )
 
-type Params map[string]any
-
-func NewFuncs(db cozo.CozoDB) template.FuncMap {
+func NewFuncs(db *sqlx.DB) template.FuncMap {
 	return template.FuncMap{
-		"query": func(query string, params Params) (cozo.NamedRows, error) {
-			return Query(db, query, params)
+		"exec": func(query string, params ...any) (sql.Result, error) {
+			return Exec(db, query, params...)
 		},
-		"queryrows": func(query string, params Params) (rows []map[string]any, err error) {
-			return QueryRows(db, query, params)
+		"queryrows": func(query string, params ...any) (rows []map[string]any, err error) {
+			return QueryRows(db, query, params...)
 		},
-		"queryrow": func(query string, params Params) (row map[string]any, err error) {
-			return QueryRow(db, query, params)
+		"queryrow": func(query string, params ...any) (row map[string]any, err error) {
+			return QueryRow(db, query, params...)
 		},
-		"queryval": func(query string, params Params) (val any, err error) {
-			return QueryVal(db, query, params)
-		},
-		"initrelation": func(relation string, query string, params Params) (cozo.NamedRows, error) {
-			return InitRelation(db, relation, query, params)
+		"queryval": func(query string, params ...any) (val any, err error) {
+			return QueryVal(db, query, params...)
 		},
 		"idx":  Idx,
 		"dict": Dict,
 		"list": List,
+		"uuid": uuid.New,
 	}
 }
 
-func Query(db cozo.CozoDB, query string, params Params) (result cozo.NamedRows, err error) {
-	result, err = db.Run(query, (map[string]any)(params))
+func Exec(db *sqlx.DB, query string, params ...any) (result sql.Result, err error) {
+	result, err = db.Exec(query, params...)
+	// log.Printf("%+v, %+v", result, err)
 	// LogQuery("QueryVal", query, result)
 	return
 }
 
-func QueryRows(db cozo.CozoDB, query string, params Params) (rows []map[string]any, err error) {
-	var result cozo.NamedRows
-	result, err = db.Run(query, (map[string]any)(params))
-	// LogQuery("QueryVal", query, result)
-	if err != nil {
-		return
+func QueryRows(db *sqlx.DB, query string, params ...any) (rows []map[string]any, err error) {
+	var r *sqlx.Rows
+	r, err = db.Queryx(query, params...)
+	for r.Next() {
+		m := make(map[string]any)
+		r.MapScan(m)
+		rows = append(rows, m)
 	}
-	for _, row := range result.Rows {
-		rowmap := map[string]any{}
-		for colidx, colname := range result.Headers {
-			rowmap[colname] = row[colidx]
-		}
-		rows = append(rows, rowmap)
+	if err == nil {
+		err = r.Err()
 	}
 	return
 }
 
-func QueryRow(db cozo.CozoDB, query string, params Params) (row map[string]any, err error) {
-	var result cozo.NamedRows
-	result, err = db.Run(query, (map[string]any)(params))
-	// LogQuery("QueryVal", query, result)
-	if err != nil {
-		return
+func QueryRow(db *sqlx.DB, query string, params ...any) (row map[string]any, err error) {
+	var rows []map[string]any
+	rows, err = QueryRows(db, query, params...)
+	if len(rows) != 1 {
+		return nil, fmt.Errorf("query returned %d rows, expected exactly 1 row", len(rows))
 	}
-	if len(result.Rows) != 1 {
-		return nil, fmt.Errorf("the query must return a single row, instead it returned %d", len(result.Rows))
-	}
-	row = map[string]any{}
-	for colidx, colname := range result.Headers {
-		row[colname] = result.Rows[0][colidx]
-	}
+	row = rows[0]
 	return
 }
 
-func QueryVal(db cozo.CozoDB, query string, params Params) (val any, err error) {
-	var result cozo.NamedRows
-	result, err = db.Run(query, (map[string]any)(params))
-	// LogQuery("QueryVal", query, result)
-	if err != nil {
-		return
-	}
-	if len(result.Rows) != 1 {
-		return nil, fmt.Errorf("the query must return a single row, instead it returned %d", len(result.Rows))
-	}
-	if len(result.Rows[0]) != 1 {
-		return nil, fmt.Errorf("the query must return a single column, instead it returned %d", len(result.Rows))
-	}
-	val = result.Rows[0][0]
+func QueryVal(db *sqlx.DB, query string, params ...any) (val any, err error) {
+	var results []any
+	err = db.Select(&results, query, params...)
+	val = results[0]
 	return
-}
-
-func InitRelation(db cozo.CozoDB, relation string, query string, params Params) (result cozo.NamedRows, err error) {
-
-	relations, err := db.Run("::relations", nil)
-	LogQuery("InitRelation", query, relations)
-	for _, rel := range relations.Rows {
-		if rel[0] == relation {
-			return
-		}
-	}
-	result, err = db.Run(query, (map[string]any)(params))
-	LogQuery("InitRelation", query, result)
-	return
-}
-
-func LogQuery(kind string, query string, result cozo.NamedRows) {
-	log.Printf("%s: %+v", kind, struct {
-		QueryString string
-		Duration    time.Duration
-		RowCount    int
-		HeaderCount int
-	}{query, time.Duration(result.Took * float64(time.Second)), len(result.Rows), len(result.Headers)})
 }
 
 // https://github.com/gohugoio/hugo/blob/6aededf6b42011c3039f5f66487a89a8dd65e0e7/tpl/collections/collections.go#L162

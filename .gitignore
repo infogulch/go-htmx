@@ -1,4 +1,4 @@
 *.exe
-*.db
+*.db*
 libs
 go-htmx

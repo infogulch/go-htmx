@@ -1,12 +1,13 @@
 {{define "init-_layout"}}
-{{query `
-?[name,path,ord] <- [['Home','/',0],['Counter','/counter',1],['Todos','/todos',2]];
-:replace pages{name,path,ord}
-` nil}}
+{{exec `
+CREATE TEMP TABLE IF NOT EXISTS pages AS
+SELECT column1 name, column2 path, column3 ord
+FROM (VALUES ('Home','/',0),('Counter','/counter',1),('Todos','/todos',2))
+`}}
 {{end}}
 
 {{define "title"}}
-<title>{{queryval `?[name] := *pages{name,path:$path}` (dict "path" .URL.Path)}}</title>
+<title>{{queryval `SELECT name FROM pages WHERE path = $1` .URL.Path}}</title>
 {{end}}
 
 {{define "http-get"}}
@@ -35,7 +36,7 @@
 
 {{define "nav"}}
 <nav class="navbar bg-base-100" hx-target="closest body">
-  {{range queryrows `?[name,path,selected,ord] := *pages{name,path,ord},selected=(path==$path) :order ord` (dict "path" .URL.Path)}}
+  {{range queryrows `SELECT name,path,(path=$1) as selected,ord FROM pages` .URL.Path}}
   <a class="btn {{if .selected}}btn-active{{else}}btn-ghost{{end}}" href="{{.path}}" hx-get="{{.path}}"
     hx-push-url="{{.path}}">{{.name}}</a>
   {{end}}

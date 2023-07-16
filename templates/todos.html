@@ -1,6 +1,5 @@
 {{define "init-todos"}}
-{{initrelation "todo" ":create todo{id:Uuid default rand_uuid_v1() => label: String, done: Bool}" nil}}
-{query ":create filter"}
+{{exec "CREATE TABLE IF NOT EXISTS todo(id TEXT PRIMARY KEY, label TEXT, done INT CHECK (done IN (0,1))) STRICT;"}}
 {{end}}
 
 {{define "body"}}
@@ -8,7 +7,7 @@
 <section class="max-w-md mx-auto">
   <header class="input-group py-4">
     {{block "toggleall" .}}
-    {{$alldone := queryval "r[and(done),count(done)] := *todo{done}; ?[alldone] := r[a,c],alldone=a&&c>0" nil}}
+    {{$alldone := queryval "SELECT COUNT(id) > 0 AND SUM(done)=COUNT(id) FROM todo"}}
     <input id="todos-toggleall" type="checkbox" {{if $alldone}}checked{{end}}
       hx-post="/todos?toggleall" hx-target="this" hx-swap-oob="true"
       class="checkbox checkbox-lg" />
@@ -21,7 +20,7 @@
   </header>
   {{block "list" .}}
   <ul id="todos-list" hx-swap-oob="true">
-    {{range queryrows "?[id,label,done] := *todo{id,label,done} :order -id" nil}}
+    {{range queryrows "SELECT id, label, done FROM todo ORDER BY id ASC"}}
     {{block "todo" .}}
     <li class="input-group py-1" hx-target="this" hx-swap="outerHTML">
       <input class="checkbox" type="checkbox" {{if .done}}checked{{end}} hx-post="/todos?id={{.id}}&toggle" />
@@ -34,14 +33,14 @@
   {{end}}
   <footer class="mt-5 flex flex-row">
     {{block "count" .}}
-    {{$count := queryval "?[count(done)] := *todo{done},done=false" nil}}
+    {{$count := queryval `SELECT COUNT(done) FROM todo WHERE done=0`}}
     <span id="todos-count" hx-swap-oob="true">
-      <strong>{{$count}}</strong> {{if eq $count 1.}}item{{else}}items{{end}} left
+      <strong>{{$count}}</strong> {{if eq $count 1}}item{{else}}items{{end}} left
     </span>
     {{end}}
     <div class="grow"></div>
     <fieldset class="flex-end" hx-swap="none">
-      {{range queryrows "?[filter,selected] <- [['all',true],['completed',false],['remaining',false]]" nil}}
+      {{range queryrows `SELECT column1 filter, column2 as selected FROM (VALUES ('all',1),('completed',0),('remaining',0))`}}
       <input class="radio inline-block align-middle ml-4"
         type="radio" id="filter-{{.filter}}" name="filter" value="{{.filter}}" {{if .selected}}checked{{end}}
         hx-post="./todos?filter={{.filter}}" />
@@ -59,10 +58,9 @@
 {{end}}
 
 {{define "htmx-post-new"}}
-{{$todo := .PostForm.newtodo | idx 0 | dict "label" | queryrow `
-{ ?[label,done] := label=$label,done=false; :put todo{label,done} }
-{ ?[id,label,done] := *todo{id,done,label},label=$label }`
-}}
+{{$id := uuid}}
+{{$_ := .PostForm.newtodo | idx 0 | exec `INSERT INTO todo(id,label,done) VALUES ($1,$2,0)` $id}}
+{{$todo := queryrow `SELECT id,label,done FROM todo WHERE id=$1` $id}}
 {{template "todo" $todo}}
 {{template "toggleall"}}
 {{template "count"}}
@@ -70,28 +68,24 @@
 {{end}}
 
 {{define "htmx-post-toggleall"}}
-{{$_ := query `
-alldone[and(done)] := *todo{done}
-?[id,done] := alldone[done0],done=!done0,*todo{id}
-:update todo{id,done}
-` nil}}
+{{$alldone := queryval "SELECT COUNT(id) > 0 AND SUM(done)=COUNT(id) FROM todo"}}
+{{$_ := exec `UPDATE todo SET done=$1` (not $alldone)}}
 {{template "list"}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
 {{define "htmx-post-id-toggle"}}
-{{$todo := .Form.id | idx 0 | dict "id" | queryrow `
-{ ?[id,done] := id=to_uuid($id),*todo{id,done:done0},done=!done0; :update todo{id,done} }
-{ ?[id,label,done] := id=to_uuid($id),*todo{id,label,done} }
-`}}
+{{$id := .Form.id | idx 0}}
+{{$_ := exec `UPDATE todo SET done=NOT done WHERE id=$1` $id}}
+{{$todo := queryrow `SELECT id,label,done FROM todo WHERE id=$1` $id}}
 {{template "todo" $todo}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
 
 {{define "htmx-delete-id"}}
-{{$_ := .Form.id | idx 0 | dict "id" | query `?[id] := id=to_uuid($id); :rm todo{id}`}}
+{{$_ := .Form.id | idx 0 | exec `DELETE FROM todo WHERE id=$1`}}
 {{template "toggleall"}}
 {{template "count"}}
 {{end}}
