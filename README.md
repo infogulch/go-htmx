@@ -1,3 +1,7 @@
+# Notice
+
+Development of this idea has moved to the [caddy-xtemplate](https://github.com/infogulch/caddy-xtemplate) repository.
+
 # About
 
 This repo demonstrates how to build an interactive web application with NO
@@ -18,16 +22,16 @@ interactivity by adding annotations to nodes in the DOM. To quote
 [the homepage](https://htmx.org/):
 
 > ### motivation
-> 
+>
 > - Why should only \<a\> and \<form\> be able to make HTTP requests?
 > - Why should only click & submit events trigger them?
 > - Why should only GET & POST methods be available?
 > - Why should you only be able to replace the entire screen?
-> 
+>
 > By removing these arbitrary constraints, htmx completes HTML as a hypertext
-> 
+>
 > ### quick start
-> 
+>
 > ```html
 > <script src="https://unpkg.com/htmx.org@1.8.5"></script>
 > <!-- have a button POST a click via AJAX -->
@@ -35,9 +39,9 @@ interactivity by adding annotations to nodes in the DOM. To quote
 >   Click Me
 > </button>
 > ```
-> 
+>
 > The hx-post and hx-swap attributes on this button tell htmx:
-> 
+>
 > > **"When a user clicks on this button, issue an AJAX request to /clicked,
 > > and replace the entire button with the HTML response"**
 
@@ -74,13 +78,13 @@ These parts look promising individually, but they need to be combined into
 something functional. This is how it's done in this repo:
 
 Each interactive page / route is its own template collection. You provide
-functionality to the the page via FuncMap functions that any template in 
+functionality to the the page via FuncMap functions that any template in
 the collection can call. When a request is received on a particular route
 the details of the request are used to determine which template definition
 to invoke in response; the template can call FuncMap functions to perform
 behaviors and get data, and they render an html response.
 
-For example, when the index handler is created, its template collection 
+For example, when the index handler is created, its template collection
 consists of `layout.html` and `index.html`. When a regular browser page
 request comes in at the index route, it executes the `"get"` template,
 defined in `layout.html`, which in turn invokes the `"body"` template,
